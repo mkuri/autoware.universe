@@ -3,3 +3,8 @@
     update_rate: 30
     target_acceleration: -2.5
     target_jerk: -1.5
+
+    # Steering handling option when MRM emergency stopping
+    #  0: keep steering command at start of emergency stop
+    #  1: publish steering command 0
+    steering_handling_type: 0

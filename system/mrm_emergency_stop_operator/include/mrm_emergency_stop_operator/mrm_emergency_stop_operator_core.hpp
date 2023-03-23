@@ -21,6 +21,7 @@
 
 // Autoware
 #include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
+#include <autoware_auto_control_msgs/msg/ackermann_lateral_command.hpp>
 #include <tier4_system_msgs/msg/mrm_behavior_status.hpp>
 #include <tier4_system_msgs/srv/operate_mrm.hpp>
 
@@ -30,6 +31,7 @@
 namespace mrm_emergency_stop_operator
 {
 using autoware_auto_control_msgs::msg::AckermannControlCommand;
+using autoware_auto_control_msgs::msg::AckermannLateralCommand;
 using tier4_system_msgs::msg::MrmBehaviorStatus;
 using tier4_system_msgs::srv::OperateMrm;
 
@@ -38,6 +40,13 @@ struct Parameters
   int update_rate;             // [Hz]
   double target_acceleration;  // [m/s^2]
   double target_jerk;          // [m/s^3]
+  int steering_handling_type;  // [-]
+};
+
+enum struct SteeringHandlingType
+{
+  KeepSteering,
+  PublishZero,
 };
 
 class MrmEmergencyStopOperator : public rclcpp::Node
@@ -76,6 +85,7 @@ private:
   MrmBehaviorStatus status_;
   AckermannControlCommand prev_control_cmd_;
   bool is_prev_control_cmd_subscribed_;
+  AckermannLateralCommand lateral_cmd_at_start_of_emergency_stop_;
 
   // Algorithm
   AckermannControlCommand calcTargetAcceleration(

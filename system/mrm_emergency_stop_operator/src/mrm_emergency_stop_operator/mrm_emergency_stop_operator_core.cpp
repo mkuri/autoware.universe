@@ -24,6 +24,7 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(const rclcpp::NodeOptions & n
   params_.update_rate = static_cast<int>(declare_parameter<int>("update_rate", 30));
   params_.target_acceleration = declare_parameter<double>("target_acceleration", -2.5);
   params_.target_jerk = declare_parameter<double>("target_jerk", -1.5);
+  params_.steering_handling_type = static_cast<int>(declare_parameter<int>("steering_handling_type", 0));
 
   // Subscriber
   sub_control_cmd_ = create_subscription<AckermannControlCommand>(
@@ -63,6 +64,12 @@ void MrmEmergencyStopOperator::operateEmergencyStop(
   const OperateMrm::Request::SharedPtr request, const OperateMrm::Response::SharedPtr response)
 {
   if (request->operate == true) {
+    if (is_prev_control_cmd_subscribed_) {
+      lateral_cmd_at_start_of_emergency_stop_ = prev_control_cmd_.lateral;
+    } else {
+      lateral_cmd_at_start_of_emergency_stop_.steering_tire_angle = 0.0;
+      lateral_cmd_at_start_of_emergency_stop_.steering_tire_rotation_rate = 0.0;
+    }
     status_.state = MrmBehaviorStatus::OPERATING;
     response->response.success = true;
   } else {
