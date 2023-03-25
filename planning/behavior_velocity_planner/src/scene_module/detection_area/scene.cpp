@@ -57,6 +57,7 @@ LineString2d DetectionAreaModule::getStopLineGeometry2d() const
 
 bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason * stop_reason)
 {
+  RCLCPP_INFO(logger_, "start modify path velocity");
   // Store original path
   const auto original_path = *path;
 
@@ -66,6 +67,7 @@ bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason *
   *stop_reason = planning_utils::initializeStopReason(StopReason::DETECTION_AREA);
 
   // Find obstacles in detection area
+  RCLCPP_INFO(logger_, "find obstacles in detecton area");
   const auto obstacle_points = getObstaclePoints();
   debug_data_.obstacle_points = obstacle_points;
   if (!obstacle_points.empty()) {
@@ -80,6 +82,7 @@ bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason *
   const size_t current_seg_idx = findEgoSegmentIndex(path->points);
 
   // Get stop point
+  RCLCPP_INFO(logger_, "get stop point");
   const auto stop_point = arc_lane_utils::createTargetPoint(
     original_path, stop_line, lane_id_, planner_param_.stop_margin,
     planner_data_->vehicle_info_.max_longitudinal_offset_m);
@@ -112,13 +115,22 @@ bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason *
     modified_stop_line_seg_idx = current_seg_idx;
   }
 
+  RCLCPP_INFO(logger_, "set distance");
   setDistance(stop_dist);
 
   // Check state
+  RCLCPP_INFO(logger_, "check state");
   setSafe(canClearStopState());
+  RCLCPP_INFO(logger_, "is safe: %d, is activated: %d", isSafe(), isActivated());
+  if (state_ == State::GO) {
+    RCLCPP_INFO(logger_, "state: GO");
+  } else {
+    RCLCPP_INFO(logger_, "state: STOP");
+  }
   if (isActivated()) {
     state_ = State::GO;
     last_obstacle_found_time_ = {};
+    RCLCPP_WARN(logger_, "RTC activated");
     return true;
   }
 
@@ -155,6 +167,7 @@ bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason *
     stop_line_seg_idx);
   if (state_ != State::STOP && dist_from_ego_to_stop < 0.0) {
     setSafe(true);
+    RCLCPP_WARN(logger_, "over stop line");
     return true;
   }
 
@@ -170,6 +183,7 @@ bool DetectionAreaModule::modifyPathVelocity(PathWithLaneId * path, StopReason *
   }
 
   // Insert stop point
+  RCLCPP_INFO(logger_, "insert stop point");
   state_ = State::STOP;
   planning_utils::insertStopPoint(modified_stop_pose.position, modified_stop_line_seg_idx, *path);
 
