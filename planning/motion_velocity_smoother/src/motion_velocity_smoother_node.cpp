@@ -420,6 +420,8 @@ bool MotionVelocitySmootherNode::checkData() const
 void MotionVelocitySmootherNode::onCurrentTrajectory(const Trajectory::ConstSharedPtr msg)
 {
   RCLCPP_DEBUG(get_logger(), "========================= run start =========================");
+  auto now = this->now();
+  RCLCPP_INFO(get_logger(), "time: %f", now.seconds());
   stop_watch_.tic();
 
   base_traj_raw_ptr_ = msg;
