@@ -198,6 +198,14 @@ bool AnalyticalJerkConstrainedSmoother::apply(
       if (std::abs(decel_target_vel) < ep) {
         applyMaxVelocity(0.0, bwd_start_index, filtered_trajectory.size() - 1, filtered_trajectory);
         output = filtered_trajectory;
+
+        RCLCPP_INFO(logger_, "Output trajectory!");
+        int i = 0;
+        for (const auto& point : output) {
+          RCLCPP_INFO(logger_, "index: %d, vel: %.2f, acc: %.2f", i, point.longitudinal_velocity_mps, point.acceleration_mps2);
+          i = i + 1;
+        }
+
         RCLCPP_INFO(logger_, "-------------------- Finish --------------------");
         return true;
       }
@@ -226,6 +234,13 @@ bool AnalyticalJerkConstrainedSmoother::apply(
     reference_trajectory, start_index, start_vel, start_acc, smoother_param_, filtered_trajectory);
 
   output = filtered_trajectory;
+
+  RCLCPP_INFO(logger_, "Output trajectory!");
+  int i = 0;
+  for (const auto& point : output) {
+    RCLCPP_INFO(logger_, "index: %d, vel: %.2f, acc: %.2f", i, point.longitudinal_velocity_mps, point.acceleration_mps2);
+    i = i + 1;
+  }
 
   RCLCPP_INFO(logger_, "-------------------- Finish --------------------");
   return true;
