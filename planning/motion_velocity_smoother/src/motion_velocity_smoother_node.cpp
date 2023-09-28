@@ -359,6 +359,7 @@ void MotionVelocitySmootherNode::calcExternalVelocityLimit()
         external_velocity_limit_ptr_->use_constraints ? cstr.max_jerk : smoother_->getMaxJerk();
       const auto j_min =
         external_velocity_limit_ptr_->use_constraints ? cstr.min_jerk : smoother_->getMinJerk();
+      RCLCPP_DEBUG(get_logger(), "velocity limit constraints. a_min: %.2f, j_max: %.2f, j_min: %.2f", a_min, j_max, j_min);
 
       // If the closest acceleration is positive, velocity will increase
       // until the acceleration becomes zero
