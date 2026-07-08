@@ -242,9 +242,33 @@ void MrmStopVelocityPlanner::densify_near_arc_length(
     sample_s.insert(s);
   }
 
-  TrajectoryPoints resampled;
-  resampled.reserve(sample_s.size());
+  // The accumulated grid samples and the exact terminal (or window-boundary) arc lengths can
+  // differ by only a few ulps, in which case sampling both yields two output points at the same
+  // position. Downstream consumers (e.g. MPC spline resampling) require strictly increasing arc
+  // length, so drop samples closer than half the resample interval to their predecessor. The
+  // exact terminal must survive so the stop point / trajectory end is preserved: on collision
+  // the preceding grid sample is replaced by the terminal.
+  const double back = arc_lengths.back();
+  const double min_gap = 0.5 * params_.decel_resample_interval;
+  std::vector<double> filtered;
+  filtered.reserve(sample_s.size());
   for (const double s : sample_s) {
+    const double clamped = std::min(s, back);
+    if (filtered.empty() || clamped - filtered.back() >= min_gap) {
+      filtered.push_back(clamped);
+    }
+  }
+  if (!filtered.empty() && filtered.back() < back) {
+    if (back - filtered.back() < min_gap) {
+      filtered.back() = back;
+    } else {
+      filtered.push_back(back);
+    }
+  }
+
+  TrajectoryPoints resampled;
+  resampled.reserve(filtered.size());
+  for (const double s : filtered) {
     resampled.push_back(sample_point_at_arc_length(points, s));
   }
   points = std::move(resampled);

@@ -63,6 +63,7 @@ private:
     size_t published_points{0};
     double cycle_time_ms{0.0};
     double odom_vx{0.0};
+    size_t sanitized_points{0};
   };
 
   struct InputData

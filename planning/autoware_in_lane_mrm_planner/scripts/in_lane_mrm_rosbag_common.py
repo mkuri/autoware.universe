@@ -133,6 +133,8 @@ PLANNER_STATUS_PLANNED_POINTS = 7
 PLANNER_STATUS_PUBLISHED_POINTS = 8
 PLANNER_STATUS_CYCLE_TIME_MS = 9
 PLANNER_STATUS_ODOM_VX = 10
+# Optional field appended in newer bags; absent in older recordings.
+PLANNER_STATUS_SANITIZED_POINTS = 11
 PLANNER_STATUS_MIN_FIELDS = 11
 
 REASON_CODE_NAMES: Dict[int, str] = {
@@ -186,6 +188,7 @@ class PlannerStatusSample:
     published_points: int
     cycle_time_ms: float
     odom_vx: float
+    sanitized_points: int = 0
 
     @property
     def trajectory_published(self) -> bool:
@@ -537,6 +540,11 @@ def parse_planner_status(data: Sequence[float], time_sec: float) -> Optional[Pla
         published_points=int(round(float(data[PLANNER_STATUS_PUBLISHED_POINTS]))),
         cycle_time_ms=float(data[PLANNER_STATUS_CYCLE_TIME_MS]),
         odom_vx=float(data[PLANNER_STATUS_ODOM_VX]),
+        sanitized_points=(
+            int(round(float(data[PLANNER_STATUS_SANITIZED_POINTS])))
+            if len(data) > PLANNER_STATUS_SANITIZED_POINTS
+            else 0
+        ),
     )
 
 
@@ -663,6 +671,7 @@ def write_planner_status_csv(path: Path, samples: Sequence[PlannerStatusSample])
                 "published_points",
                 "cycle_time_ms",
                 "odom_vx",
+                "sanitized_points",
                 "trajectory_published",
             ]
         )
@@ -682,6 +691,7 @@ def write_planner_status_csv(path: Path, samples: Sequence[PlannerStatusSample])
                     sample.published_points,
                     f"{sample.cycle_time_ms:.3f}",
                     f"{sample.odom_vx:.6f}",
+                    sample.sanitized_points,
                     int(sample.trajectory_published),
                 ]
             )

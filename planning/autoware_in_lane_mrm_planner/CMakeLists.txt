@@ -21,6 +21,7 @@ ament_auto_add_library(${PROJECT_NAME}_lib SHARED
   src/mrm_obstacle_stop_planner.cpp
   src/mrm_stop_velocity_planner.cpp
   src/in_lane_mrm_trajectory_validator.cpp
+  src/trajectory_sanitizer.cpp
   src/trajectory_latcher.cpp
   src/predicted_objects_latcher.cpp
   src/mrm_trigger_relay_node.cpp
@@ -59,6 +60,7 @@ if(BUILD_TESTING)
     test/test_lateral_offset.cpp
     test/test_mrm_stop_velocity_planner.cpp
     test/test_in_lane_mrm_trajectory_validator.cpp
+    test/test_trajectory_sanitizer.cpp
     test/test_trajectory_latcher.cpp
     test/test_param_validation.cpp
   )

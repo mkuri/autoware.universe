@@ -463,9 +463,11 @@ class InLaneMrmPlannerRosbagAnalyzer:
             for sample in self.planner_status_samples
             if classify_planner_sample(sample, moving_odom_threshold=self.moving_odom_threshold)
         )
+        sanitized = sum(1 for sample in self.planner_status_samples if sample.sanitized_points > 0)
         print(f"  trigger_active      : {trigger_samples}")
         print(f"  is_latched          : {latch_samples}")
         print(f"  published_points=0  : {no_publish}")
+        print(f"  sanitized_points>0  : {sanitized}  (overlap points removed before publish)")
         print(f"  reason not ok (0/30): {not_ok_reason}")
         print(
             f"  moving no publish   : {moving_no_publish} "

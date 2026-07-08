@@ -14,6 +14,8 @@
 
 #include "in_lane_mrm_planner_node.hpp"
 
+#include "trajectory_sanitizer.hpp"
+
 #include <autoware_utils_debug/time_keeper.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info_utils.hpp>
 
@@ -25,6 +27,9 @@ namespace autoware::in_lane_mrm_planner
 
 namespace
 {
+// Final safety net before publishing: points closer than this violate the strictly increasing
+// arc-length assumption of downstream consumers (e.g. MPC spline resampling) and are removed.
+constexpr double kMinPublishPointInterval = 1e-3;  // [m]
 enum class StatusReasonCode : int32_t {
   PUBLISHED_OK = 0,
   WAITING_MAP = 1,
@@ -197,6 +202,13 @@ void InLaneMrmPlannerNode::on_timer()
       velocity_planner_.apply(traj.points, odom, accel);
       trajectory_modifier_.publish_planning_factor();
 
+      status.sanitized_points = remove_overlap_points(traj.points, kMinPublishPointInterval);
+      if (status.sanitized_points > 0) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 5000, "Removed %zu overlapping trajectory point(s).",
+          status.sanitized_points);
+      }
+
       const auto validation = trajectory_validator_.validate(traj.points);
       if (validation.ok) {
         status.validation_ok = true;
@@ -314,6 +326,7 @@ void InLaneMrmPlannerNode::publish_debug_status(const DebugStatus & status)
     static_cast<float>(status.published_points),
     static_cast<float>(status.cycle_time_ms),
     static_cast<float>(status.odom_vx),
+    static_cast<float>(status.sanitized_points),
   };
   pub_debug_status_->publish(msg);
 }

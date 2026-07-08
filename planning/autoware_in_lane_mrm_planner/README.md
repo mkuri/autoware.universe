@@ -38,19 +38,20 @@ Other fields are boolean flags (0/1) or numeric diagnostics.
 
 ### `data[]` layout
 
-| Index | Field                  | Unit / type | Description                                                  |
-| ----- | ---------------------- | ----------- | ------------------------------------------------------------ |
-| 0     | `reason_code`          | int         | Primary status (see table below)                             |
-| 1     | `trigger_active`       | 0/1         | MRM trigger is true                                          |
-| 2     | `is_latched`           | 0/1         | Trajectory latch is active                                   |
-| 3     | `has_latest_candidate` | 0/1         | A candidate trajectory is stored in the latcher              |
-| 4     | `data_ready`           | 0/1         | Map, route, odometry, and acceleration are available         |
-| 5     | `plan_ok`              | 0/1         | Path planning succeeded this cycle (non-latched mode only)   |
-| 6     | `validation_ok`        | 0/1         | Trajectory validator passed (non-latched mode only)          |
-| 7     | `planned_points`       | count       | Trajectory point count after plan/smooth/modifier/velocity   |
-| 8     | `published_points`     | count       | Point count of the trajectory actually published (0 if none) |
-| 9     | `cycle_time_ms`        | ms          | Wall time for this timer callback                            |
-| 10    | `odom_vx`              | m/s         | Longitudinal velocity from input odometry                    |
+| Index | Field                  | Unit / type | Description                                                                                                                 |
+| ----- | ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 0     | `reason_code`          | int         | Primary status (see table below)                                                                                            |
+| 1     | `trigger_active`       | 0/1         | MRM trigger is true                                                                                                         |
+| 2     | `is_latched`           | 0/1         | Trajectory latch is active                                                                                                  |
+| 3     | `has_latest_candidate` | 0/1         | A candidate trajectory is stored in the latcher                                                                             |
+| 4     | `data_ready`           | 0/1         | Map, route, odometry, and acceleration are available                                                                        |
+| 5     | `plan_ok`              | 0/1         | Path planning succeeded this cycle (non-latched mode only)                                                                  |
+| 6     | `validation_ok`        | 0/1         | Trajectory validator passed (non-latched mode only)                                                                         |
+| 7     | `planned_points`       | count       | Trajectory point count after plan/smooth/modifier/velocity                                                                  |
+| 8     | `published_points`     | count       | Point count of the trajectory actually published (0 if none)                                                                |
+| 9     | `cycle_time_ms`        | ms          | Wall time for this timer callback                                                                                           |
+| 10    | `odom_vx`              | m/s         | Longitudinal velocity from input odometry                                                                                   |
+| 11    | `sanitized_points`     | count       | Overlapping points removed before publish (should stay 0; nonzero means an upstream stage produced (near-)duplicate points) |
 
 ### `reason_code` values
 
@@ -84,6 +85,38 @@ velocity planner, not the validator.
 If `reason_code` is not `0` or `30`, or `published_points` is 0 while the vehicle is moving,
 `~/output/trajectory` was not updated that cycle. The longitudinal follower then keeps the
 previous reference, which can make target speed appear to drop to zero in diagnostics.
+
+## Future tasks
+
+Deferred follow-ups from the 2026-06-30 incident investigation (MRM trajectory follower
+SIGABRT caused by duplicate points in the published trajectory; rosbags
+`..._2026-06-30-11-36-50_p0900_7.db3` and `..._2026-06-30-15-12-51_p0900_8.db3`, both while
+driving manually near the same U-turn lanelet junction around map coordinates
+(x=89149, y=42425)). The duplicate-point generation itself was fixed
+(`densify_near_arc_length()` sample spacing guard + `remove_overlap_points()` publish net),
+but the upstream degeneracies below remain:
+
+1. **`shift_trajectory_to_ego()` short-trajectory fallback** (`src/path_planner.cpp`,
+   `merge_idx = size - 2` branch): when the remaining trajectory ahead of ego is shorter than
+   the shift length `L` (ego overrunning the path end), the fallback degenerates down to a
+   3-point trajectory `[ego, end-1, end]` whose tail can lie behind ego. Agreed direction:
+   when no intermediate shift point can be generated, skip shifting and return the input
+   trajectory unchanged (the input already passes through ego laterally via
+   `apply_lateral_offset()`).
+2. **`apply_lateral_offset()` self-intersection at sharp centerline kinks**
+   (`src/in_lane_mrm_trajectory_planner.cpp`): offsetting every point along its own normal
+   self-intersects where the lateral offset exceeds the local curvature radius (observed at a
+   lanelet junction with ~107 deg heading discontinuity within 0.2 m). Additionally, near the
+   kink the ego projection flips between branches, so the applied offset `d` jumps frame to
+   frame (up to 1.7 m observed). Agreed direction: detect the kink during path generation and
+   truncate the path before it (which then relies on item 1 / item 3 for the degraded output).
+3. **Explicit diagnostics / "when does the MRM planner give up" design**: needs a top-down
+   decision before implementation. Candidate signals identified in the investigation: ego far
+   off the reference path (large lateral offset or yaw deviation; ~2 rad observed before the
+   crash), plan failure (`invalid_s_range` after ego passes the path end), and validation
+   failure. Today these only reach the debug `planner_status` topic; whether to promote them
+   to `/diagnostics` (and with which severities/thresholds) is undecided. Related question:
+   explicit diag vs. relying on trajectory-timeout diag downstream.
 
 ## Dependencies
 

@@ -117,6 +117,27 @@ double min_spacing_in_arc_range(
 
 }  // namespace
 
+TEST(MrmStopVelocityPlannerTest, DensifyDoesNotEmitOverlappingPointsAtTrajectoryEnd)
+{
+  // Trajectory ends 1.0 m ahead of a still-moving ego: the densify window reaches the trajectory
+  // terminal, where the accumulated 0.1 m grid samples collide with the exact terminal arc length
+  // in floating point. Regression for the duplicated terminal point that broke MPC spline
+  // resampling (2026-06-30 in-lane MRM incident).
+  auto points = make_straight_trajectory(11, 0.1, 1.0F);
+  const MrmStopVelocityPlanner planner(make_default_params());
+
+  planner.apply(points, make_odometry(0.5), make_accel(-0.5));
+
+  ASSERT_GE(points.size(), 2U);
+  const double min_gap = 0.5 * 0.1;  // half of decel_resample_interval
+  for (size_t i = 1; i < points.size(); ++i) {
+    EXPECT_GE(arc_length_at_index(points, i) - arc_length_at_index(points, i - 1), min_gap * 0.99)
+      << "overlapping points at index " << i - 1 << " and " << i;
+  }
+  // The exact trajectory terminal must survive the spacing filter.
+  EXPECT_NEAR(points.back().pose.position.x, 1.0, 1e-6);
+}
+
 TEST(MrmStopVelocityPlannerTest, RequiredDistanceFitsWithin30mAtTargetLimits)
 {
   const MrmStopVelocityPlanner planner(make_default_params());
