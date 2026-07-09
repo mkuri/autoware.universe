@@ -80,3 +80,17 @@ TEST_F(ParamValidationTest, RejectsPositiveTargetAndMaxParams)
     build_param_listener_with_override("mrm_velocity.max_deceleration_relaxation", 6.0),
     rclcpp::exceptions::InvalidParameterValueException);
 }
+
+TEST_F(ParamValidationTest, RejectsNegativeBrakeDelayTime)
+{
+  // Brake dead time is a physical duration; negative values must be rejected at load time.
+  EXPECT_THROW(
+    build_param_listener_with_override("mrm_velocity.brake_delay_time", -0.1),
+    rclcpp::exceptions::InvalidParameterValueException);
+}
+
+TEST_F(ParamValidationTest, AcceptsZeroAndPositiveBrakeDelayTime)
+{
+  EXPECT_NO_THROW(build_param_listener_with_override("mrm_velocity.brake_delay_time", 0.0));
+  EXPECT_NO_THROW(build_param_listener_with_override("mrm_velocity.brake_delay_time", 0.5));
+}

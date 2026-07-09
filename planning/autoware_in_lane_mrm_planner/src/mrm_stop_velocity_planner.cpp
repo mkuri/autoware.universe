@@ -69,7 +69,8 @@ TrajectoryPoint sample_point_at_arc_length(const TrajectoryPoints & points, cons
 }
 
 void advance_decel_state(
-  double & v, double & a, const double ds, const double jerk, const double a_target)
+  double & v, double & a, double & delay_remaining, const double ds, const double jerk,
+  const double a_target)
 {
   if (ds <= 0.0 || v <= 0.0) {
     v = 0.0;
@@ -80,7 +81,10 @@ void advance_decel_state(
   double remaining = ds;
   while (remaining > 1e-9 && v > 0.0) {
     const double dt = std::min(kIntegrationDt, remaining / std::max(v, kStopVelocityThreshold));
-    if (a > a_target) {
+    if (delay_remaining > 0.0) {
+      // Brake command still in flight: hold the current (clamped) acceleration.
+      delay_remaining -= dt;
+    } else if (a > a_target) {
       a += jerk * dt;
       a = std::max(a, a_target);
     } else {
@@ -97,17 +101,19 @@ void advance_decel_state(
 }
 
 double calc_required_stop_distance(
-  const double v0, const double a0, const double jerk, const double a_target)
+  const double v0, const double a0, const double delay_time, const double jerk,
+  const double a_target)
 {
   double v = std::max(0.0, v0);
   double a = a0;
+  double delay_remaining = delay_time;
   double distance = 0.0;
   constexpr double max_distance = 500.0;
 
   while (v > kStopVelocityThreshold && distance < max_distance) {
     const double dt = kIntegrationDt;
     const double ds = std::max(v * dt, kStopVelocityThreshold * dt);
-    advance_decel_state(v, a, ds, jerk, a_target);
+    advance_decel_state(v, a, delay_remaining, ds, jerk, a_target);
     distance += ds;
   }
   return distance;
@@ -132,6 +138,13 @@ MrmStopVelocityPlanner::MrmStopVelocityPlanner(const Params & params) : params_(
 void MrmStopVelocityPlanner::update_params(const Params & params)
 {
   params_ = params.mrm_velocity;
+}
+
+double MrmStopVelocityPlanner::effective_initial_accel(const double a0) const
+{
+  // While the brake command is in flight the drive is assumed to cut immediately, so a
+  // positive current acceleration cannot persist; an already-applied brake keeps acting.
+  return params_.brake_delay_time > 0.0 ? std::min(a0, 0.0) : a0;
 }
 
 std::optional<size_t> MrmStopVelocityPlanner::find_constraint_stop_index(
@@ -159,23 +172,26 @@ bool MrmStopVelocityPlanner::is_feasible(
 
   const double available_distance =
     autoware::motion_utils::calcSignedArcLength(points, ego_idx, constraint_idx);
-  const double required_distance = calc_required_stop_distance(v0, a0, jerk, decel);
+  const double required_distance =
+    calc_required_stop_distance(v0, a0, params_.brake_delay_time, jerk, decel);
   return available_distance + 1e-3 >= required_distance;
 }
 
 double MrmStopVelocityPlanner::required_stop_distance(
   const double v0, const double a0, const double jerk, const double decel) const
 {
-  return calc_required_stop_distance(v0, a0, jerk, decel);
+  return calc_required_stop_distance(
+    v0, effective_initial_accel(a0), params_.brake_delay_time, jerk, decel);
 }
 
 MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limits(
   const TrajectoryPoints & points, const size_t ego_idx, const size_t constraint_idx,
   const double v0, const double a0) const
 {
+  const double a0_eff = effective_initial_accel(a0);
   DecelLimits limits{params_.target_jerk, params_.target_deceleration};
 
-  if (is_feasible(points, ego_idx, constraint_idx, v0, a0, limits.jerk, limits.decel)) {
+  if (is_feasible(points, ego_idx, constraint_idx, v0, a0_eff, limits.jerk, limits.decel)) {
     return limits;
   }
 
@@ -185,7 +201,7 @@ MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limit
   // jerk (20-5)/5 + decel (6-3)/1 = 6), so this leaves ample margin while staying small.
   constexpr int max_relaxation_iterations = 20;
   int iterations = 0;
-  while (!is_feasible(points, ego_idx, constraint_idx, v0, a0, limits.jerk, limits.decel)) {
+  while (!is_feasible(points, ego_idx, constraint_idx, v0, a0_eff, limits.jerk, limits.decel)) {
     if (++iterations > max_relaxation_iterations) {
       RCLCPP_ERROR(
         rclcpp::get_logger("mrm_stop_velocity_planner"),
@@ -312,6 +328,7 @@ void MrmStopVelocityPlanner::fill_forward(
 
   double v = std::max(0.0, v0);
   double a = a0;
+  double delay_remaining = params_.brake_delay_time;
   bool stopped = false;
 
   points.at(ego_idx).longitudinal_velocity_mps = static_cast<float>(v);
@@ -325,7 +342,7 @@ void MrmStopVelocityPlanner::fill_forward(
     }
 
     const double ds = autoware::motion_utils::calcSignedArcLength(points, i - 1, i);
-    advance_decel_state(v, a, ds, jerk, decel);
+    advance_decel_state(v, a, delay_remaining, ds, jerk, decel);
 
     if (v <= kStopVelocityThreshold) {
       stopped = true;
@@ -346,7 +363,7 @@ void MrmStopVelocityPlanner::apply(
   }
 
   const double v0 = std::max(0.0, odom.twist.twist.linear.x);
-  const double a0 = extract_longitudinal_accel(accel);
+  const double a0 = effective_initial_accel(extract_longitudinal_accel(accel));
 
   if (v0 <= kStopVelocityThreshold) {
     apply_zero_stop_profile(points, odom, static_cast<float>(a0));
@@ -369,7 +386,8 @@ void MrmStopVelocityPlanner::apply(
 
   const double ego_arc_length = autoware::motion_utils::calcSignedArcLength(points, 0, ego_idx);
   const double predicted_stop_arc_length =
-    ego_arc_length + calc_required_stop_distance(v0, a0, limits.jerk, limits.decel);
+    ego_arc_length +
+    calc_required_stop_distance(v0, a0, params_.brake_delay_time, limits.jerk, limits.decel);
   densify_near_arc_length(points, predicted_stop_arc_length);
 
   const size_t ego_idx_after =

@@ -353,6 +353,12 @@ in_lane_mrm_planner:
       description: deceleration relaxation step per iteration (more negative is harsher) [m/s^2]
       validation:
         lt<>: [0.0]
+    brake_delay_time:
+      type: double
+      default_value: 0.0
+      description: dead time until brake actuation responds after the MRM trigger; the deceleration ramp is delayed by this time while velocity is held (drive is assumed to cut immediately). Tune it to also absorb trigger-path and trajectory-latch latency [s]
+      validation:
+        gt_eq<>: [0.0]
     decel_resample_range:
       type: double
       default_value: 2.0

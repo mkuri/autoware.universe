@@ -541,6 +541,12 @@
             "description": "Deceleration relaxation step per iteration (more negative is harsher) [m/s^2]",
             "default": -1.0
           },
+          "brake_delay_time": {
+            "type": "number",
+            "description": "Dead time until brake actuation responds after the MRM trigger; the deceleration ramp is delayed by this time while velocity is held [s]",
+            "default": 0.0,
+            "minimum": 0.0
+          },
           "decel_resample_range": {
             "type": "number",
             "description": "Arc-length range around constraint stop to densify trajectory [m]",

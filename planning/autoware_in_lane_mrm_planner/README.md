@@ -117,6 +117,24 @@ but the upstream degeneracies below remain:
    failure. Today these only reach the debug `planner_status` topic; whether to promote them
    to `/diagnostics` (and with which severities/thresholds) is undecided. Related question:
    explicit diag vs. relying on trajectory-timeout diag downstream.
+4. **Drive-side delay modeling in the `brake_delay_time` hold**
+   (`src/mrm_stop_velocity_planner.cpp`, `effective_initial_accel()`): the hold model assumes
+   the drive command cuts immediately at the MRM trigger, so a positive current acceleration
+   is clamped to zero during the hold (valid for BEVs such as J6). For vehicles with slow
+   drive-torque decay (e.g. ICE with a torque converter), consider a separate
+   `drive_delay_time` or a parameter to disable the clamp. Until then the residual effect can
+   be absorbed by tuning `brake_delay_time` upward (agreed 2026-07-09).
+5. **Upper-bound validation for `brake_delay_time`**
+   (`param/in_lane_mrm_planner_parameters.yaml`): the parameter has no upper bound, so a
+   misconfigured value (e.g. 50.0) makes the required stop distance exceed the 500 m cap in
+   `calc_required_stop_distance()`, every plan becomes infeasible, and the planner permanently
+   publishes the zero-velocity fallback — functionally safe but silently degraded, visible
+   only in a throttled error log. Add an `lt_eq<>` bound (a few seconds) mirrored as
+   `maximum` in the JSON schema (review finding, 2026-07-09).
+6. **Regression test that `brake_delay_time = 0.0` does not clamp a positive `a0`**
+   (`test/test_mrm_stop_velocity_planner.cpp`): the clamp in `effective_initial_accel()` must
+   apply only when the delay is positive, but no test pins the delay-zero half; a regression
+   that clamps unconditionally would pass the current suite (review finding, 2026-07-09).
 
 ## Dependencies
 

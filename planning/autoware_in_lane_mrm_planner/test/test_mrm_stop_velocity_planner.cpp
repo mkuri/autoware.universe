@@ -38,6 +38,14 @@ Params make_default_params()
   params.mrm_velocity.step_deceleration_relaxation = -1.0;
   params.mrm_velocity.decel_resample_range = 2.0;
   params.mrm_velocity.decel_resample_interval = 0.1;
+  params.mrm_velocity.brake_delay_time = 0.0;
+  return params;
+}
+
+Params make_params_with_brake_delay(const double delay_time)
+{
+  auto params = make_default_params();
+  params.mrm_velocity.brake_delay_time = delay_time;
   return params;
 }
 
@@ -333,6 +341,111 @@ TEST(MrmStopVelocityPlannerTest, AlignsPrefixThroughEgoWithOdomVelocity)
   }
   EXPECT_GT(points.at(ego_idx + 1).longitudinal_velocity_mps, 0.01F);
   EXPECT_GE(find_first_stopped_index(points), ego_idx + 1);
+}
+
+TEST(MrmStopVelocityPlannerTest, HoldsVelocityDuringBrakeDelayAndShiftsStopPoint)
+{
+  const double v0 = 10.0;
+  auto points_no_delay = make_straight_trajectory(300, 0.5, static_cast<float>(v0));
+  auto points_with_delay = points_no_delay;
+
+  const MrmStopVelocityPlanner planner_no_delay(make_default_params());
+  const MrmStopVelocityPlanner planner_with_delay(make_params_with_brake_delay(0.5));
+
+  planner_no_delay.apply(points_no_delay, make_odometry(v0), make_accel(0.0));
+  planner_with_delay.apply(points_with_delay, make_odometry(v0), make_accel(0.0));
+
+  // Velocity is held at v0 while the brake command is in flight (hold length = v0 * 0.5 = 5 m).
+  for (size_t i = 0; i < points_with_delay.size(); ++i) {
+    if (arc_length_at_index(points_with_delay, i) > 4.0) {
+      break;
+    }
+    EXPECT_NEAR(points_with_delay.at(i).longitudinal_velocity_mps, v0, 0.2);
+  }
+
+  const double stop_no_delay =
+    arc_length_at_index(points_no_delay, find_first_stopped_index(points_no_delay));
+  const double stop_with_delay =
+    arc_length_at_index(points_with_delay, find_first_stopped_index(points_with_delay));
+  EXPECT_NEAR(stop_with_delay - stop_no_delay, 5.0, 1.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, RequiredStopDistanceGrowsByHoldLength)
+{
+  const MrmStopVelocityPlanner planner_no_delay(make_default_params());
+  const MrmStopVelocityPlanner planner_with_delay(make_params_with_brake_delay(0.5));
+
+  const double d0 = planner_no_delay.required_stop_distance(10.0, 0.0, -5.0, -3.0);
+  const double d1 = planner_with_delay.required_stop_distance(10.0, 0.0, -5.0, -3.0);
+  EXPECT_NEAR(d1 - d0, 5.0, 0.5);
+}
+
+TEST(MrmStopVelocityPlannerTest, BrakingA0KeepsDeceleratingDuringDelay)
+{
+  const double v0 = 10.0;
+  const double a0 = -1.0;
+  auto points = make_straight_trajectory(300, 0.5, static_cast<float>(v0));
+  const MrmStopVelocityPlanner planner(make_params_with_brake_delay(0.5));
+  planner.apply(points, make_odometry(v0), make_accel(a0));
+
+  // At s ~= 3 m (t ~= 0.3 s, still inside the hold) the profile follows v0 + a0*t, not flat v0.
+  const size_t idx = 6;  // 6 points * 0.5 m spacing
+  const double t = arc_length_at_index(points, idx) / v0;
+  EXPECT_NEAR(points.at(idx).longitudinal_velocity_mps, v0 + a0 * t, 0.2);
+  EXPECT_LT(points.at(idx).longitudinal_velocity_mps, static_cast<float>(v0));
+}
+
+TEST(MrmStopVelocityPlannerTest, PositiveA0NeverProducesAcceleratingReference)
+{
+  const double v0 = 10.0;
+  auto points_pos_a0 = make_straight_trajectory(300, 0.5, static_cast<float>(v0));
+  auto points_zero_a0 = points_pos_a0;
+  const MrmStopVelocityPlanner planner(make_params_with_brake_delay(0.5));
+
+  planner.apply(points_pos_a0, make_odometry(v0), make_accel(1.5));
+  planner.apply(points_zero_a0, make_odometry(v0), make_accel(0.0));
+
+  float max_velocity = 0.0F;
+  for (const auto & p : points_pos_a0) {
+    max_velocity = std::max(max_velocity, p.longitudinal_velocity_mps);
+  }
+  EXPECT_LE(max_velocity, static_cast<float>(v0) + 0.01F);
+
+  // Positive a0 is clamped to zero during the delay, so the profile matches the a0 = 0 case.
+  EXPECT_EQ(find_first_stopped_index(points_pos_a0), find_first_stopped_index(points_zero_a0));
+}
+
+TEST(MrmStopVelocityPlannerTest, RelaxationAccountsForBrakeDelayDistance)
+{
+  const double v0 = 10.0;
+  // Constraint at 22 m: feasible at target limits without delay (required ~19.6 m),
+  // infeasible with a 0.5 s delay (+5 m hold), so relaxation must kick in.
+  const auto points =
+    make_straight_trajectory_with_constraint_at(60, 0.5, static_cast<float>(v0), 44);
+
+  const MrmStopVelocityPlanner planner_no_delay(make_default_params());
+  const MrmStopVelocityPlanner planner_with_delay(make_params_with_brake_delay(0.5));
+
+  const auto limits_no_delay = planner_no_delay.select_profile_limits(points, 0, 44, v0, 0.0);
+  const auto limits_with_delay = planner_with_delay.select_profile_limits(points, 0, 44, v0, 0.0);
+
+  EXPECT_DOUBLE_EQ(limits_no_delay.decel, -3.0);
+  EXPECT_LT(limits_with_delay.decel, -3.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, StopsGracefullyWhenVelocityReachesZeroDuringHold)
+{
+  const double v0 = 0.5;
+  auto points = make_straight_trajectory(100, 0.5, static_cast<float>(v0));
+  const MrmStopVelocityPlanner planner(make_params_with_brake_delay(1.0));
+  planner.apply(points, make_odometry(v0), make_accel(-3.0));
+
+  // v0 = 0.5 with a0 = -3 reaches zero in ~0.17 s (~0.04 m), well within the hold.
+  const size_t stop_idx = find_first_stopped_index(points);
+  EXPECT_LE(arc_length_at_index(points, stop_idx), 1.0);
+  for (size_t i = stop_idx; i < points.size(); ++i) {
+    EXPECT_FLOAT_EQ(points.at(i).longitudinal_velocity_mps, 0.0F);
+  }
 }
 
 }  // namespace autoware::in_lane_mrm_planner

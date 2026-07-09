@@ -52,6 +52,8 @@ private:
     const TrajectoryPoints & points, size_t ego_idx, size_t constraint_idx, double v0, double a0,
     double jerk, double decel) const;
 
+  double effective_initial_accel(double a0) const;
+
   void densify_near_arc_length(TrajectoryPoints & points, double center_arc_length) const;
 
   void fill_forward(
