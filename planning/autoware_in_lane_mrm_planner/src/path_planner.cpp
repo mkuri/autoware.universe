@@ -73,7 +73,7 @@ void PathPlanner::set_planner_data(
       &route_context_.routing_graph_ptr);
   }
 
-  if (route_ptr) {
+  if (route_ptr && route_context_.lanelet_map_ptr) {
     set_route(route_ptr);
   }
 }
