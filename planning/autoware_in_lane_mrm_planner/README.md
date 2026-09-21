@@ -89,7 +89,7 @@ previous reference, which can make target speed appear to drop to zero in diagno
 ## Future tasks
 
 Deferred follow-ups from the 2026-06-30 incident investigation (MRM trajectory follower
-SIGABRT caused by duplicate points in the published trajectory; rosbags
+abort crash caused by duplicate points in the published trajectory; rosbags
 `..._2026-06-30-11-36-50_p0900_7.db3` and `..._2026-06-30-15-12-51_p0900_8.db3`, both while
 driving manually near the same U-turn lanelet junction around map coordinates
 (x=89149, y=42425)). The duplicate-point generation itself was fixed
