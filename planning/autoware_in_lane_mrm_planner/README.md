@@ -22,6 +22,26 @@ Do not run package builds in parallel with a full workspace build.
 ros2 launch autoware_in_lane_mrm_planner in_lane_mrm_planner.launch.xml
 ```
 
+## Road border stop (Phase2)
+
+`MrmRoadBorderStopPlanner` (applied inside the trajectory modifier right after the obstacle stop)
+sweeps the vehicle footprint along the candidate trajectory from the ego nearest point and
+inserts a stop point `road_border_stop.stop_margin` before the first interference with a map
+road border. Boundaries are the lanelet2 linestrings whose `type` attribute is listed in
+`road_border_stop.boundary_types_to_detect` (default `["road_border"]`); their segments are
+indexed in an R-tree that is rebuilt only when the map instance changes. The contact arc length
+is refined by bisection between the last non-interfering and the first interfering trajectory
+point. The stop point is never placed behind the ego. Deceleration feasibility is left to
+`MrmStopVelocityPlanner`, which relaxes deceleration / jerk up to `mrm_velocity.max_*_relaxation`
+when the stop point is close.
+
+Outputs: `PlanningFactor` (STOP) under the module name `in_lane_mrm_road_border_stop` and debug
+markers on `~/road_border_stop/debug/marker` (contact footprint, contact segment / point and a
+stop virtual wall).
+
+For verification with a custom map, add a lane-crossing linestring with a dedicated type
+(e.g. `mrm_test_border`) and append that type to `boundary_types_to_detect`.
+
 ## Debug topic: planner status
 
 Published every control cycle to explain why `~/output/trajectory` was or was not published.

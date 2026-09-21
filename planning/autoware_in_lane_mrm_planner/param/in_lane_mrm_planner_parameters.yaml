@@ -254,6 +254,44 @@ in_lane_mrm_planner:
           default_value: 10000
           description: maximum size for clustering
 
+  road_border_stop:
+    enable:
+      type: bool
+      default_value: true
+      description: enable road border stop (Phase2). Inserts a stop point before the vehicle footprint interferes with a map road border
+    boundary_types_to_detect:
+      type: string_array
+      default_value: ["road_border"]
+      description: lanelet2 linestring `type` attributes treated as uncrossable boundaries. Extra types can be added for verification maps
+    stop_margin:
+      type: double
+      default_value: 1.0
+      description: distance kept between the vehicle footprint and the road border at the stop point [m]
+      validation:
+        gt_eq<>: [0.0]
+    lateral_margin:
+      type: double
+      default_value: 0.0
+      description: lateral inflation of the vehicle footprint used for the interference check [m]
+      validation:
+        gt_eq<>: [0.0]
+    longitudinal_margin:
+      type: double
+      default_value: 0.0
+      description: longitudinal inflation of the vehicle footprint used for the interference check [m]
+      validation:
+        gt_eq<>: [0.0]
+    max_check_length:
+      type: double
+      default_value: 100.0
+      description: forward arc length from the ego nearest point within which the interference is searched [m]
+      validation:
+        gt<>: [0.0]
+    use_height_filter:
+      type: bool
+      default_value: true
+      description: ignore boundary segments whose z is outside ego z +/- vehicle height (e.g. other levels of a grade separation)
+
   debug:
     enable_path:
       type: bool
