@@ -427,6 +427,55 @@
         "required": [],
         "additionalProperties": false
       },
+      "road_border_stop": {
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "Enable road border stop (Phase2): insert a stop point before the footprint interferes with a map road border",
+            "default": true
+          },
+          "boundary_types_to_detect": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "lanelet2 linestring type attributes treated as uncrossable boundaries",
+            "default": ["road_border"]
+          },
+          "stop_margin": {
+            "type": "number",
+            "description": "Distance kept between the footprint and the road border at the stop point [m]",
+            "default": 1.0,
+            "minimum": 0.0
+          },
+          "lateral_margin": {
+            "type": "number",
+            "description": "Footprint lateral inflation for the interference check [m]",
+            "default": 0.0,
+            "minimum": 0.0
+          },
+          "longitudinal_margin": {
+            "type": "number",
+            "description": "Footprint longitudinal inflation for the interference check [m]",
+            "default": 0.0,
+            "minimum": 0.0
+          },
+          "max_check_length": {
+            "type": "number",
+            "description": "Forward search length from the ego nearest point [m]",
+            "default": 100.0,
+            "exclusiveMinimum": 0.0
+          },
+          "use_height_filter": {
+            "type": "boolean",
+            "description": "Ignore boundary segments outside ego z +/- vehicle height",
+            "default": true
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
       "debug": {
         "type": "object",
         "properties": {

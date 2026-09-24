@@ -19,6 +19,7 @@ ament_auto_add_library(${PROJECT_NAME}_lib SHARED
   src/path_planner.cpp
   src/obstacle_stop_utils.cpp
   src/mrm_obstacle_stop_planner.cpp
+  src/mrm_road_border_stop_planner.cpp
   src/mrm_stop_velocity_planner.cpp
   src/in_lane_mrm_trajectory_validator.cpp
   src/trajectory_sanitizer.cpp
@@ -57,6 +58,7 @@ if(BUILD_TESTING)
     test/test_trajectory_sanitizer.cpp
     test/test_trajectory_latcher.cpp
     test/test_param_validation.cpp
+    test/test_mrm_road_border_stop_planner.cpp
     test/test_stop_profile.cpp
   )
 
