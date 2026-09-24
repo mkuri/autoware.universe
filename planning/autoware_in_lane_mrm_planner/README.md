@@ -81,9 +81,21 @@ point. The stop point is never placed behind the ego. Deceleration feasibility i
 `MrmStopVelocityPlanner`, which relaxes deceleration / jerk of each profile up to
 `mrm_velocity.profiles.<profile>.max_*_relaxation` when the stop point is close.
 
-Outputs: `PlanningFactor` (STOP) under the module name `in_lane_mrm_road_border_stop` and debug
-markers on `~/road_border_stop/debug/marker` (contact footprint, contact segment / point and a
-stop virtual wall).
+The footprint sweep starts at the ego pose itself and then continues over the trajectory points
+ahead of the ego, so a border behind the vehicle is never reported.
+
+Outputs:
+
+| Output          | Topic                                                           | Type                                                             |
+| --------------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Planning factor | `/planning/planning_factors/in_lane_mrm_road_border_stop`       | `autoware_internal_planning_msgs/msg/PlanningFactorArray` (STOP) |
+| Debug markers   | `~/road_border_stop/debug/marker` (node-relative, not remapped) | `visualization_msgs/msg/MarkerArray`                             |
+
+The debug marker topic is relative to the node name, so with the default launch it resolves to
+`/in_lane_mrm_planner/road_border_stop/debug/marker` (not `/planning/...`). It contains the
+contact footprint, the contact segment / point and a stop virtual wall. The wall is drawn at
+the stop pose shifted by the vehicle front (`max_longitudinal_offset`), i.e. where the vehicle
+front will be when stopped.
 
 For verification with a custom map, add a lane-crossing linestring with a dedicated type
 (e.g. `mrm_test_border`) and append that type to `boundary_types_to_detect`.
