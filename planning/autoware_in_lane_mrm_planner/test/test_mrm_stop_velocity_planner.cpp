@@ -30,10 +30,14 @@ namespace
 Params make_default_params()
 {
   Params params;
-  params.mrm_velocity.target_deceleration = -3.0;
-  params.mrm_velocity.target_jerk = -5.0;
-  params.mrm_velocity.max_jerk_relaxation = -20.0;
-  params.mrm_velocity.max_deceleration_relaxation = -6.0;
+  params.mrm_velocity.profiles.moderate.target_deceleration = -3.0;
+  params.mrm_velocity.profiles.moderate.target_jerk = -5.0;
+  params.mrm_velocity.profiles.moderate.max_jerk_relaxation = -20.0;
+  params.mrm_velocity.profiles.moderate.max_deceleration_relaxation = -6.0;
+  params.mrm_velocity.profiles.emergency.target_deceleration = -6.0;
+  params.mrm_velocity.profiles.emergency.target_jerk = -20.0;
+  params.mrm_velocity.profiles.emergency.max_jerk_relaxation = -30.0;
+  params.mrm_velocity.profiles.emergency.max_deceleration_relaxation = -8.0;
   params.mrm_velocity.step_jerk_relaxation = -5.0;
   params.mrm_velocity.step_deceleration_relaxation = -1.0;
   params.mrm_velocity.decel_resample_range = 2.0;
@@ -197,6 +201,73 @@ TEST(MrmStopVelocityPlannerTest, RelaxationReachesMaxDeceleration)
 
   planner.apply(points, make_odometry(10.0), make_accel(0.0));
   EXPECT_LT(arc_length_at_index(points, find_first_stopped_index(points)), 10.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, ProfileLimitsFollowProfileParams)
+{
+  const MrmStopVelocityPlanner planner(make_default_params());
+
+  const auto moderate = planner.profile_limits(StopProfile::MODERATE);
+  EXPECT_DOUBLE_EQ(moderate.target_jerk, -5.0);
+  EXPECT_DOUBLE_EQ(moderate.target_deceleration, -3.0);
+  EXPECT_DOUBLE_EQ(moderate.max_jerk_relaxation, -20.0);
+  EXPECT_DOUBLE_EQ(moderate.max_deceleration_relaxation, -6.0);
+
+  const auto emergency = planner.profile_limits(StopProfile::EMERGENCY);
+  EXPECT_DOUBLE_EQ(emergency.target_jerk, -20.0);
+  EXPECT_DOUBLE_EQ(emergency.target_deceleration, -6.0);
+  EXPECT_DOUBLE_EQ(emergency.max_jerk_relaxation, -30.0);
+  EXPECT_DOUBLE_EQ(emergency.max_deceleration_relaxation, -8.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, EmergencyProfileStopsShorterThanModerate)
+{
+  // Same free-running trajectory (no constraint within reach): each profile plans with its own
+  // target limits without relaxation, and the emergency profile stops earlier.
+  auto moderate_points = make_straight_trajectory(101, 1.0, 10.0F);
+  auto emergency_points = moderate_points;
+  const MrmStopVelocityPlanner planner(make_default_params());
+
+  const auto moderate_limits =
+    planner.select_profile_limits(moderate_points, 0, 100, 10.0, 0.0, StopProfile::MODERATE);
+  EXPECT_DOUBLE_EQ(moderate_limits.jerk, -5.0);
+  EXPECT_DOUBLE_EQ(moderate_limits.decel, -3.0);
+  const auto emergency_limits =
+    planner.select_profile_limits(emergency_points, 0, 100, 10.0, 0.0, StopProfile::EMERGENCY);
+  EXPECT_DOUBLE_EQ(emergency_limits.jerk, -20.0);
+  EXPECT_DOUBLE_EQ(emergency_limits.decel, -6.0);
+
+  planner.apply(moderate_points, make_odometry(10.0), make_accel(0.0), StopProfile::MODERATE);
+  planner.apply(emergency_points, make_odometry(10.0), make_accel(0.0), StopProfile::EMERGENCY);
+
+  const double moderate_stop =
+    arc_length_at_index(moderate_points, find_first_stopped_index(moderate_points));
+  const double emergency_stop =
+    arc_length_at_index(emergency_points, find_first_stopped_index(emergency_points));
+  EXPECT_NEAR(moderate_stop, planner.required_stop_distance(10.0, 0.0, -5.0, -3.0), 2.0);
+  EXPECT_NEAR(emergency_stop, planner.required_stop_distance(10.0, 0.0, -20.0, -6.0), 2.0);
+  EXPECT_LT(emergency_stop, moderate_stop);
+
+  float min_emergency_accel = 0.0F;
+  for (const auto & point : emergency_points) {
+    min_emergency_accel = std::min(min_emergency_accel, point.acceleration_mps2);
+  }
+  EXPECT_NEAR(min_emergency_accel, -6.0F, 1e-3F);
+}
+
+TEST(MrmStopVelocityPlannerTest, EmergencyProfileRelaxesUpToItsOwnLimits)
+{
+  // Constraint too close for either target: each profile relaxes up to its own maximum.
+  auto points = make_straight_trajectory_with_constraint_at(15, 1.0, 10.0F, 5);
+  const MrmStopVelocityPlanner planner(make_default_params());
+
+  const auto moderate = planner.select_profile_limits(points, 0, 5, 10.0, 0.0);
+  EXPECT_DOUBLE_EQ(moderate.jerk, -20.0);
+  EXPECT_DOUBLE_EQ(moderate.decel, -6.0);
+  const auto emergency =
+    planner.select_profile_limits(points, 0, 5, 10.0, 0.0, StopProfile::EMERGENCY);
+  EXPECT_DOUBLE_EQ(emergency.jerk, -30.0);
+  EXPECT_DOUBLE_EQ(emergency.decel, -8.0);
 }
 
 TEST(MrmStopVelocityPlannerTest, RelaxationTerminatesWhenStepCannotProgress)

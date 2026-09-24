@@ -140,6 +140,22 @@ void MrmStopVelocityPlanner::update_params(const Params & params)
   params_ = params.mrm_velocity;
 }
 
+MrmStopVelocityPlanner::ProfileLimits MrmStopVelocityPlanner::profile_limits(
+  const StopProfile profile) const
+{
+  const auto to_limits = [](const auto & p) {
+    return ProfileLimits{
+      p.target_jerk, p.target_deceleration, p.max_jerk_relaxation, p.max_deceleration_relaxation};
+  };
+  switch (profile) {
+    case StopProfile::EMERGENCY:
+      return to_limits(params_.profiles.emergency);
+    case StopProfile::MODERATE:
+    default:
+      return to_limits(params_.profiles.moderate);
+  }
+}
+
 double MrmStopVelocityPlanner::effective_initial_accel(const double a0) const
 {
   // While the brake command is in flight the drive is assumed to cut immediately, so a
@@ -186,10 +202,11 @@ double MrmStopVelocityPlanner::required_stop_distance(
 
 MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limits(
   const TrajectoryPoints & points, const size_t ego_idx, const size_t constraint_idx,
-  const double v0, const double a0) const
+  const double v0, const double a0, const StopProfile profile) const
 {
   const double a0_eff = effective_initial_accel(a0);
-  DecelLimits limits{params_.target_jerk, params_.target_deceleration};
+  const auto profile_params = profile_limits(profile);
+  DecelLimits limits{profile_params.target_jerk, profile_params.target_deceleration};
 
   if (is_feasible(points, ego_idx, constraint_idx, v0, a0_eff, limits.jerk, limits.decel)) {
     return limits;
@@ -208,15 +225,15 @@ MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limit
         "Relaxation did not converge after %d iterations (check relaxation params); applying max "
         "relaxation limits",
         max_relaxation_iterations);
-      limits.jerk = params_.max_jerk_relaxation;
-      limits.decel = params_.max_deceleration_relaxation;
+      limits.jerk = profile_params.max_jerk_relaxation;
+      limits.decel = profile_params.max_deceleration_relaxation;
       break;
     }
-    if (can_relax_jerk(limits.jerk, params_.max_jerk_relaxation)) {
+    if (can_relax_jerk(limits.jerk, profile_params.max_jerk_relaxation)) {
       limits.jerk += params_.step_jerk_relaxation;
       continue;
     }
-    if (can_relax_decel(limits.decel, params_.max_deceleration_relaxation)) {
+    if (can_relax_decel(limits.decel, profile_params.max_deceleration_relaxation)) {
       limits.decel += params_.step_deceleration_relaxation;
       continue;
     }
@@ -224,8 +241,8 @@ MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limit
     RCLCPP_ERROR(
       rclcpp::get_logger("mrm_stop_velocity_planner"),
       "Cannot stop before constraint index %zu; applying max relaxation limits", constraint_idx);
-    limits.jerk = params_.max_jerk_relaxation;
-    limits.decel = params_.max_deceleration_relaxation;
+    limits.jerk = profile_params.max_jerk_relaxation;
+    limits.decel = profile_params.max_deceleration_relaxation;
     break;
   }
 
@@ -356,7 +373,8 @@ void MrmStopVelocityPlanner::fill_forward(
 }
 
 void MrmStopVelocityPlanner::apply(
-  TrajectoryPoints & points, const Odometry & odom, const AccelWithCovarianceStamped & accel) const
+  TrajectoryPoints & points, const Odometry & odom, const AccelWithCovarianceStamped & accel,
+  const StopProfile profile) const
 {
   if (points.empty()) {
     return;
@@ -374,13 +392,14 @@ void MrmStopVelocityPlanner::apply(
     autoware::motion_utils::findNearestSegmentIndex(points, odom.pose.pose.position);
   const size_t constraint_idx = find_constraint_stop_index(points).value_or(points.size() - 1);
 
-  const auto limits = select_profile_limits(points, ego_idx, constraint_idx, v0, a0);
+  const auto limits = select_profile_limits(points, ego_idx, constraint_idx, v0, a0, profile);
 
   if (!is_feasible(points, ego_idx, constraint_idx, v0, a0, limits.jerk, limits.decel)) {
     RCLCPP_ERROR(
       rclcpp::get_logger("mrm_stop_velocity_planner"),
       "Cannot stop before constraint index %zu; applying zero velocity fallback", constraint_idx);
-    apply_zero_stop_profile(points, odom, static_cast<float>(params_.max_deceleration_relaxation));
+    apply_zero_stop_profile(
+      points, odom, static_cast<float>(profile_limits(profile).max_deceleration_relaxation));
     return;
   }
 

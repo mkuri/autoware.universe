@@ -67,19 +67,44 @@ TEST_F(ParamValidationTest, RejectsZeroRelaxationStep)
 
 TEST_F(ParamValidationTest, RejectsPositiveTargetAndMaxParams)
 {
-  // Wrong-sign (positive) targets/limits must be rejected.
-  EXPECT_THROW(
-    build_param_listener_with_override("mrm_velocity.target_jerk", 5.0),
-    rclcpp::exceptions::InvalidParameterValueException);
-  EXPECT_THROW(
-    build_param_listener_with_override("mrm_velocity.target_deceleration", 3.0),
-    rclcpp::exceptions::InvalidParameterValueException);
-  EXPECT_THROW(
-    build_param_listener_with_override("mrm_velocity.max_jerk_relaxation", 20.0),
-    rclcpp::exceptions::InvalidParameterValueException);
-  EXPECT_THROW(
-    build_param_listener_with_override("mrm_velocity.max_deceleration_relaxation", 6.0),
-    rclcpp::exceptions::InvalidParameterValueException);
+  // Wrong-sign (positive) targets/limits must be rejected for every profile.
+  for (const std::string profile : {"moderate", "emergency"}) {
+    const std::string prefix = "mrm_velocity.profiles." + profile + ".";
+    EXPECT_THROW(
+      build_param_listener_with_override(prefix + "target_jerk", 5.0),
+      rclcpp::exceptions::InvalidParameterValueException)
+      << profile;
+    EXPECT_THROW(
+      build_param_listener_with_override(prefix + "target_deceleration", 3.0),
+      rclcpp::exceptions::InvalidParameterValueException)
+      << profile;
+    EXPECT_THROW(
+      build_param_listener_with_override(prefix + "max_jerk_relaxation", 20.0),
+      rclcpp::exceptions::InvalidParameterValueException)
+      << profile;
+    EXPECT_THROW(
+      build_param_listener_with_override(prefix + "max_deceleration_relaxation", 6.0),
+      rclcpp::exceptions::InvalidParameterValueException)
+      << profile;
+  }
+}
+
+TEST_F(ParamValidationTest, ProfileDefaultsMatchL4Constraints)
+{
+  rclcpp::NodeOptions options;
+  auto node = std::make_shared<rclcpp::Node>("in_lane_mrm_planner_param_test", options);
+  ::in_lane_mrm_planner::ParamListener listener(node->get_node_parameters_interface());
+  const auto params = listener.get_params();
+  const auto & moderate = params.mrm_velocity.profiles.moderate;
+  EXPECT_DOUBLE_EQ(moderate.target_deceleration, -3.0);
+  EXPECT_DOUBLE_EQ(moderate.target_jerk, -5.0);
+  EXPECT_DOUBLE_EQ(moderate.max_deceleration_relaxation, -4.0);
+  EXPECT_DOUBLE_EQ(moderate.max_jerk_relaxation, -10.0);
+  const auto & emergency = params.mrm_velocity.profiles.emergency;
+  EXPECT_DOUBLE_EQ(emergency.target_deceleration, -6.0);
+  EXPECT_DOUBLE_EQ(emergency.target_jerk, -20.0);
+  EXPECT_DOUBLE_EQ(emergency.max_deceleration_relaxation, -8.0);
+  EXPECT_DOUBLE_EQ(emergency.max_jerk_relaxation, -30.0);
 }
 
 TEST_F(ParamValidationTest, RejectsNegativeBrakeDelayTime)
