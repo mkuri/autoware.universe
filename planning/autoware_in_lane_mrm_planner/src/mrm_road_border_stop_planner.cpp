@@ -29,6 +29,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace autoware::in_lane_mrm_planner
@@ -194,11 +195,12 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::apply(
   }
 
   const auto & ego_position = odom.pose.pose.position;
-  const size_t ego_idx = autoware::motion_utils::findNearestSegmentIndex(points, ego_position);
+  const size_t ego_segment_idx =
+    autoware::motion_utils::findNearestSegmentIndex(points, ego_position);
   const double ego_arc_length =
     autoware::motion_utils::calcSignedArcLength(points, size_t{0}, ego_position);
 
-  auto contact = find_first_contact(points, ego_idx, ego_arc_length);
+  auto contact = find_first_contact(points, odom.pose.pose, ego_segment_idx, ego_arc_length);
   if (contact) {
     set_stop_point(points, *contact, odom);
     last_contact_ = contact;
@@ -208,37 +210,52 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::apply(
 }
 
 std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::find_first_contact(
-  const TrajectoryPoints & points, const size_t start_idx, const double ego_arc_length) const
+  const TrajectoryPoints & points, const geometry_msgs::msg::Pose & ego_pose,
+  const size_t ego_segment_idx, const double ego_arc_length) const
 {
-  if (points.size() < 2 || start_idx >= points.size() || boundary_index_.empty()) {
+  if (points.size() < 2 || ego_segment_idx >= points.size() || boundary_index_.empty()) {
     return std::nullopt;
   }
 
-  double arc = autoware::motion_utils::calcSignedArcLength(points, 0, start_idx);
-  double arc_prev = arc;
-
-  for (size_t i = start_idx; i < points.size(); ++i) {
-    if (i > start_idx) {
-      arc_prev = arc;
-      arc += autoware_utils_geometry::calc_distance2d(points.at(i - 1), points.at(i));
-    }
-    if (arc - ego_arc_length > params_.max_check_length) break;
-
-    const auto & pose = points.at(i).pose;
-    const auto footprint = create_footprint(pose);
-    const auto hit = find_intersecting_segment(footprint, pose.position.z);
-    if (!hit) continue;
-
+  const auto make_contact = [&](
+                              const size_t index, const BoundarySegmentIndex::Entry & entry,
+                              const double arc_length, const geometry_msgs::msg::Pose & pose) {
     RoadBorderContact contact;
-    contact.contact_index = i;
+    contact.contact_index = index;
     contact.ego_arc_length = ego_arc_length;
-    contact.linestring_id = (*hit)->linestring_id;
-    contact.segment = (*hit)->segment;
-    contact.contact_arc_length =
-      (i == start_idx) ? arc : refine_contact_arc_length(points, i, arc_prev, arc);
+    contact.linestring_id = entry.linestring_id;
+    contact.segment = entry.segment;
+    contact.contact_arc_length = arc_length;
+    contact.contact_pose = pose;
     contact.contact_point =
       closest_point_on_segment(contact.segment, pose.position, pose.position.z);
     return contact;
+  };
+
+  // The first footprint is the ego itself (not the trajectory point behind it at the segment
+  // start).
+  if (const auto hit = find_intersecting_segment(create_footprint(ego_pose), ego_pose.position.z)) {
+    return make_contact(
+      std::min(ego_segment_idx + 1, points.size() - 1), **hit, ego_arc_length, ego_pose);
+  }
+
+  geometry_msgs::msg::Pose pose_prev = ego_pose;
+  double arc_prev = ego_arc_length;
+  double arc = autoware::motion_utils::calcSignedArcLength(points, 0, ego_segment_idx);
+  for (size_t i = ego_segment_idx + 1; i < points.size(); ++i) {
+    arc += autoware_utils_geometry::calc_distance2d(points.at(i - 1), points.at(i));
+    if (arc <= ego_arc_length) continue;  // not ahead of the ego (degenerate projection)
+    if (arc - ego_arc_length > params_.max_check_length) break;
+
+    const auto & pose = points.at(i).pose;
+    const auto hit = find_intersecting_segment(create_footprint(pose), pose.position.z);
+    if (!hit) {
+      pose_prev = pose;
+      arc_prev = arc;
+      continue;
+    }
+    const auto [contact_arc, contact_pose] = refine_contact(pose_prev, pose, arc_prev, arc);
+    return make_contact(i, **hit, contact_arc, contact_pose);
   }
   return std::nullopt;
 }
@@ -277,29 +294,27 @@ MrmRoadBorderStopPlanner::find_intersecting_segment(
   return std::nullopt;
 }
 
-double MrmRoadBorderStopPlanner::refine_contact_arc_length(
-  const TrajectoryPoints & points, const size_t contact_idx, const double arc_prev,
-  const double arc_contact) const
+std::pair<double, geometry_msgs::msg::Pose> MrmRoadBorderStopPlanner::refine_contact(
+  const geometry_msgs::msg::Pose & pose_prev, const geometry_msgs::msg::Pose & pose_contact,
+  const double arc_prev, const double arc_contact) const
 {
-  if (contact_idx == 0 || arc_contact <= arc_prev) return arc_contact;
-
-  const auto & pose_prev = points.at(contact_idx - 1).pose;
-  const auto & pose_contact = points.at(contact_idx).pose;
+  if (arc_contact <= arc_prev) return {arc_contact, pose_contact};
 
   double lo = 0.0;  // ratio: no contact
   double hi = 1.0;  // ratio: contact
+  geometry_msgs::msg::Pose pose_hi = pose_contact;
   for (size_t k = 0; k < kBisectionIterations; ++k) {
     const double mid = 0.5 * (lo + hi);
     const auto pose = autoware_utils_geometry::calc_interpolated_pose(
       pose_prev, pose_contact, mid, /*set_orientation_from_position_direction=*/false);
-    const auto footprint = create_footprint(pose);
-    if (find_intersecting_segment(footprint, pose.position.z)) {
+    if (find_intersecting_segment(create_footprint(pose), pose.position.z)) {
       hi = mid;
+      pose_hi = pose;
     } else {
       lo = mid;
     }
   }
-  return arc_prev + hi * (arc_contact - arc_prev);
+  return {arc_prev + hi * (arc_contact - arc_prev), pose_hi};
 }
 
 void MrmRoadBorderStopPlanner::set_stop_point(
@@ -361,8 +376,7 @@ void MrmRoadBorderStopPlanner::publish_debug_markers(
   if (last_contact_) {
     const auto & c = *last_contact_;
     const auto red = autoware_utils::create_marker_color(1.0, 0.2, 0.2, 0.9);
-    add_polygon_marker(
-      create_footprint(points.at(c.contact_index).pose), "contact_footprint", 0, red, 0.15);
+    add_polygon_marker(create_footprint(c.contact_pose), "contact_footprint", 0, red, 0.15);
 
     Marker seg = autoware_utils::create_default_marker(
       "map", now, "contact_segment", 0, Marker::LINE_STRIP,

@@ -71,8 +71,9 @@ private:
 
 struct RoadBorderContact
 {
-  size_t contact_index{0};         //!< first trajectory index whose footprint intersects a border
+  size_t contact_index{0};  //!< first trajectory index at or after the contact (before insertion)
   double contact_arc_length{0.0};  //!< refined base_link arc length (from trajectory start) [m]
+  geometry_msgs::msg::Pose contact_pose;  //!< base_link pose where the footprint first touches
   double ego_arc_length{0.0};  //!< arc length of the ego position projected on the trajectory [m]
   lanelet::Id linestring_id{lanelet::InvalId};
   autoware_utils_geometry::Segment2d segment;
@@ -101,8 +102,11 @@ public:
   /// Forward sweep from `start_idx`. `ego_arc_length` is the arc length of the ego position
   /// (from the trajectory start) used as the origin of `max_check_length` and as the lower
   /// bound of the stop point. Exposed for unit tests.
+  /// Sweep the footprint starting at the ego pose, then along the trajectory points ahead of the
+  /// ego (index > ego_segment_idx), and return the first contact with a border (if any).
   std::optional<RoadBorderContact> find_first_contact(
-    const TrajectoryPoints & points, const size_t start_idx, const double ego_arc_length) const;
+    const TrajectoryPoints & points, const geometry_msgs::msg::Pose & ego_pose,
+    const size_t ego_segment_idx, const double ego_arc_length) const;
 
   const BoundarySegmentIndex & boundary_index() const { return boundary_index_; }
 
@@ -113,9 +117,11 @@ private:
   std::optional<const BoundarySegmentIndex::Entry *> find_intersecting_segment(
     const autoware_utils_geometry::Polygon2d & footprint, const double pose_z) const;
   bool is_within_height(const BoundarySegmentIndex::Entry & entry, const double pose_z) const;
-  double refine_contact_arc_length(
-    const TrajectoryPoints & points, const size_t contact_idx, const double arc_prev,
-    const double arc_contact) const;
+  /// Bisection between a non-interfering and an interfering pose. Returns the refined arc length
+  /// and the corresponding (interpolated) pose.
+  std::pair<double, geometry_msgs::msg::Pose> refine_contact(
+    const geometry_msgs::msg::Pose & pose_prev, const geometry_msgs::msg::Pose & pose_contact,
+    const double arc_prev, const double arc_contact) const;
   void set_stop_point(
     TrajectoryPoints & points, RoadBorderContact & contact, const Odometry & odom);
   void publish_debug_markers(const TrajectoryPoints & points, const Odometry & odom) const;
