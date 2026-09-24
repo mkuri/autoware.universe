@@ -79,6 +79,15 @@
           min_size: 10
           max_size: 10000
 
+    road_border_stop:
+      enable: true
+      boundary_types_to_detect: ["road_border"] # add a verification-only type (e.g. "mrm_test_border") when testing with a custom map
+      stop_margin: 1.0 # [m] distance kept between the footprint and the road border at the stop point
+      lateral_margin: 0.0 # [m] footprint lateral inflation for the interference check
+      longitudinal_margin: 0.0 # [m] footprint longitudinal inflation for the interference check
+      max_check_length: 100.0 # [m] forward search length from the ego nearest point
+      use_height_filter: true # ignore boundaries outside ego z +/- vehicle height
+
     post_resample:
       max_trajectory_length: 300.0
       min_trajectory_length: 30.0

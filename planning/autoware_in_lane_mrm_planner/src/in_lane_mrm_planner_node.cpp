@@ -290,6 +290,7 @@ InLaneMrmPlannerNode::ProfileFlags InLaneMrmPlannerNode::plan_candidates(
   status.planned_points = base_traj.points.size();
   trajectory_smoother_.smooth(base_traj.points, odom.pose.pose);
   trajectory_modifier_.set_objects(objects_latcher_.objects_for_planning(live_objects));
+  trajectory_modifier_.set_lanelet_map(path_planner_->route_context().lanelet_map_ptr);
   trajectory_modifier_.apply(base_traj.points, odom, accel);
   trajectory_modifier_.publish_planning_factor();
 
@@ -390,6 +391,7 @@ void InLaneMrmPlannerNode::update_params()
 {
   params_ = param_listener_->get_params();
   path_planner_->update_params(params_);
+  trajectory_modifier_.update_params(params_);
   velocity_planner_.update_params(params_);
   trajectory_validator_.update_params(params_);
 }
