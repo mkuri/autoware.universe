@@ -42,11 +42,11 @@ TEST(TrajectoryLatcherTest, OutputFollowsLatestCandidateBeforeLatch)
   const auto traj_a = make_trajectory(5.0F);
   const auto traj_b = make_trajectory(3.0F);
 
-  latcher.update_candidate(traj_a);
+  latcher.update_candidate(StopProfile::MODERATE, traj_a);
   ASSERT_TRUE(latcher.output().has_value());
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 5.0F);
 
-  latcher.update_candidate(traj_b);
+  latcher.update_candidate(StopProfile::MODERATE, traj_b);
   ASSERT_TRUE(latcher.output().has_value());
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 3.0F);
 }
@@ -54,14 +54,14 @@ TEST(TrajectoryLatcherTest, OutputFollowsLatestCandidateBeforeLatch)
 TEST(TrajectoryLatcherTest, LatchFreezesOutputDespiteNewCandidates)
 {
   TrajectoryLatcher latcher;
-  latcher.update_candidate(make_trajectory(4.0F));
-  latcher.latch();
+  latcher.update_candidate(StopProfile::MODERATE, make_trajectory(4.0F));
+  ASSERT_TRUE(latcher.latch(StopProfile::MODERATE));
 
   ASSERT_TRUE(latcher.is_latched());
   ASSERT_TRUE(latcher.output().has_value());
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 4.0F);
 
-  latcher.update_candidate(make_trajectory(1.0F));
+  latcher.update_candidate(StopProfile::MODERATE, make_trajectory(1.0F));
   ASSERT_TRUE(latcher.output().has_value());
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 4.0F);
 }
@@ -69,9 +69,9 @@ TEST(TrajectoryLatcherTest, LatchFreezesOutputDespiteNewCandidates)
 TEST(TrajectoryLatcherTest, UnlatchResumesLatestCandidate)
 {
   TrajectoryLatcher latcher;
-  latcher.update_candidate(make_trajectory(4.0F));
-  latcher.latch();
-  latcher.update_candidate(make_trajectory(1.0F));
+  latcher.update_candidate(StopProfile::MODERATE, make_trajectory(4.0F));
+  ASSERT_TRUE(latcher.latch(StopProfile::MODERATE));
+  latcher.update_candidate(StopProfile::MODERATE, make_trajectory(1.0F));
   latcher.unlatch();
 
   EXPECT_FALSE(latcher.is_latched());
@@ -82,10 +82,10 @@ TEST(TrajectoryLatcherTest, UnlatchResumesLatestCandidate)
 TEST(TrajectoryLatcherTest, IgnoresEmptyCandidate)
 {
   TrajectoryLatcher latcher;
-  latcher.update_candidate(make_trajectory(2.0F));
+  latcher.update_candidate(StopProfile::MODERATE, make_trajectory(2.0F));
 
   Trajectory empty;
-  latcher.update_candidate(empty);
+  latcher.update_candidate(StopProfile::MODERATE, empty);
   ASSERT_TRUE(latcher.output().has_value());
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 2.0F);
 }

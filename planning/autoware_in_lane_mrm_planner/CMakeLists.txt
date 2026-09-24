@@ -24,7 +24,6 @@ ament_auto_add_library(${PROJECT_NAME}_lib SHARED
   src/trajectory_sanitizer.cpp
   src/trajectory_latcher.cpp
   src/predicted_objects_latcher.cpp
-  src/mrm_trigger_relay_node.cpp
   src/mrm_in_lane_stop_auxiliary_commands_node.cpp
 )
 
@@ -44,11 +43,6 @@ rclcpp_components_register_node(${PROJECT_NAME}_lib
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}_lib
-  PLUGIN "autoware::in_lane_mrm_planner::MrmTriggerRelayNode"
-  EXECUTABLE mrm_trigger_relay_node
-)
-
-rclcpp_components_register_node(${PROJECT_NAME}_lib
   PLUGIN "autoware::in_lane_mrm_planner::MrmInLaneStopAuxiliaryCommandsNode"
   EXECUTABLE mrm_in_lane_stop_auxiliary_commands_node
 )
@@ -63,6 +57,7 @@ if(BUILD_TESTING)
     test/test_trajectory_sanitizer.cpp
     test/test_trajectory_latcher.cpp
     test/test_param_validation.cpp
+    test/test_stop_profile.cpp
   )
 
   target_include_directories(test_${PROJECT_NAME} PRIVATE

@@ -103,7 +103,7 @@ InLaneMrmPlannerNode::InLaneMrmPlannerNode(const rclcpp::NodeOptions & options)
   kinematic_state_subscriber_(this, "~/input/kinematic_state"),
   acceleration_subscriber_(this, "~/input/acceleration"),
   objects_subscriber_(this, "~/input/objects"),
-  trigger_subscriber_(this, "~/input/trigger")
+  trigger_subscriber_(this, "~/input/trigger", rclcpp::QoS{1}.reliable().transient_local())
 {
   path_planner_ =
     std::make_unique<PathPlanner>(get_logger(), get_clock(), time_keeper_, params_, vehicle_info_);
@@ -131,9 +131,15 @@ void InLaneMrmPlannerNode::on_timer()
 
   const auto input_data = take_data();
   status.data_ready = is_data_ready(input_data);
-  status.trigger_active = input_data.trigger_ptr && input_data.trigger_ptr->data;
+  status.trigger_active = input_data.trigger_ptr && input_data.trigger_ptr->trigger;
+  if (input_data.trigger_ptr) {
+    status.requested_profile = input_data.trigger_ptr->profile;
+  }
   status.is_latched = trajectory_latcher_.is_latched();
   status.has_latest_candidate = trajectory_latcher_.has_latest_candidate();
+  if (const auto latched_profile = trajectory_latcher_.latched_profile()) {
+    status.latched_profile = to_trigger_profile(*latched_profile);
+  }
   if (input_data.odometry_ptr) {
     status.odom_vx = input_data.odometry_ptr->twist.twist.linear.x;
   }
@@ -167,19 +173,71 @@ void InLaneMrmPlannerNode::on_timer()
   PredictedObjects empty_objects;
   const auto & live_objects = input_data.objects_ptr ? *input_data.objects_ptr : empty_objects;
 
-  const bool trigger_active = input_data.trigger_ptr && input_data.trigger_ptr->data;
+  const bool trigger_active = status.trigger_active;
+  const StopProfile requested_profile =
+    trigger_active ? resolve_requested_profile(*input_data.trigger_ptr) : kStandbyStopProfile;
   const auto trigger_edges = trigger_edge_detector_.update(trigger_active);
   if (trigger_edges.rising) {
     objects_latcher_.latch(live_objects, params_.latch.use_latched_objects);
-    trajectory_latcher_.latch();
   }
   if (trigger_edges.falling) {
     objects_latcher_.unlatch();
+  }
+
+  const auto action =
+    decide_latch_action(trigger_active, requested_profile, trajectory_latcher_.latched_profile());
+  if (action == LatchAction::UNLATCH) {
     trajectory_latcher_.unlatch();
+    RCLCPP_INFO(get_logger(), "In-lane stop trigger released; trajectory unlatched.");
+  }
+  // On the trigger, freeze the candidate that was published as hot standby in the previous cycle
+  // (planned from all profiles every cycle). If none is stored yet, retry after planning below.
+  bool latched_now = false;
+  if (action == LatchAction::LATCH && trajectory_latcher_.latch(requested_profile)) {
+    latched_now = true;
+    RCLCPP_INFO(
+      get_logger(), "In-lane stop triggered; latched the %s profile.",
+      to_string(requested_profile));
+  }
+
+  // Candidates are planned while unlatched. A profile change while latched (e.g. moderate ->
+  // emergency) re-plans from the current state and re-latches only a candidate planned in this
+  // cycle, so that a stale pre-trigger candidate is never latched.
+  const bool need_plan = !trajectory_latcher_.is_latched() || action == LatchAction::RELATCH;
+  ProfileFlags planned_profiles{};
+  if (need_plan) {
+    planned_profiles = plan_candidates(odom, accel, live_objects, status);
+  }
+
+  if (action == LatchAction::LATCH && !latched_now) {
+    if (trajectory_latcher_.latch(requested_profile)) {
+      RCLCPP_INFO(
+        get_logger(), "In-lane stop triggered; latched the %s profile.",
+        to_string(requested_profile));
+    } else {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "In-lane stop triggered but no %s candidate is available yet; retrying.",
+        to_string(requested_profile));
+    }
+  }
+  if (action == LatchAction::RELATCH) {
+    const auto previous = trajectory_latcher_.latched_profile();
+    if (planned_profiles.at(to_index(requested_profile))) {
+      trajectory_latcher_.latch(requested_profile);
+      RCLCPP_INFO(
+        get_logger(), "In-lane stop profile changed; re-latched %s -> %s.",
+        previous ? to_string(*previous) : "none", to_string(requested_profile));
+    } else {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "In-lane stop profile changed to %s but planning failed; keeping the %s trajectory and "
+        "retrying.",
+        to_string(requested_profile), previous ? to_string(*previous) : "none");
+    }
   }
 
   std::optional<Trajectory> trajectory_to_publish;
-
   if (trajectory_latcher_.is_latched()) {
     trajectory_to_publish = trajectory_latcher_.output();
     status.plan_ok = true;
@@ -187,54 +245,15 @@ void InLaneMrmPlannerNode::on_timer()
     status.reason_code = trajectory_to_publish
                            ? static_cast<int>(StatusReasonCode::LATCHED_OUTPUT_PUBLISHED)
                            : static_cast<int>(StatusReasonCode::LATCHED_WITHOUT_CANDIDATE);
-    if (trajectory_to_publish) {
-      status.published_points = trajectory_to_publish->points.size();
-    }
-  } else {
-    const auto planned_traj = trajectory_planner_->plan(odom);
-    if (planned_traj) {
-      status.plan_ok = true;
-      auto traj = *planned_traj;
-      status.planned_points = traj.points.size();
-      trajectory_smoother_.smooth(traj.points, odom.pose.pose);
-      trajectory_modifier_.set_objects(objects_latcher_.objects_for_planning(live_objects));
-      trajectory_modifier_.apply(traj.points, odom, accel);
-      velocity_planner_.apply(traj.points, odom, accel);
-      trajectory_modifier_.publish_planning_factor();
-
-      status.sanitized_points = remove_overlap_points(traj.points, kMinPublishPointInterval);
-      if (status.sanitized_points > 0) {
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 5000, "Removed %zu overlapping trajectory point(s).",
-          status.sanitized_points);
-      }
-
-      const auto validation = trajectory_validator_.validate(traj.points);
-      if (validation.ok) {
-        status.validation_ok = true;
-        traj.header.stamp = now();
-        traj.header.frame_id = odom.header.frame_id;
-        trajectory_latcher_.update_candidate(trajectory_selector_.select(traj));
-        trajectory_to_publish = trajectory_latcher_.output();
-        if (trajectory_to_publish) {
-          status.published_points = trajectory_to_publish->points.size();
-          status.reason_code = static_cast<int>(StatusReasonCode::PUBLISHED_OK);
-        } else {
-          status.reason_code = static_cast<int>(StatusReasonCode::PLAN_FAILED_NO_OUTPUT);
-        }
-      } else {
-        status.reason_code = to_reason_code(validation.code);
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 5000, "Trajectory validation failed: %s",
-          validation.reason.c_str());
-      }
-    } else {
-      status.reason_code = to_reason_code(path_planner_->last_failure_code());
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Trajectory planning failed.");
-    }
+  } else if (planned_profiles.at(to_index(kStandbyStopProfile))) {
+    trajectory_to_publish = trajectory_latcher_.output();
+    status.reason_code = trajectory_to_publish
+                           ? static_cast<int>(StatusReasonCode::PUBLISHED_OK)
+                           : static_cast<int>(StatusReasonCode::PLAN_FAILED_NO_OUTPUT);
   }
 
   if (trajectory_to_publish) {
+    status.published_points = trajectory_to_publish->points.size();
     auto published = *trajectory_to_publish;
     published.header.stamp = now();
     if (published.header.frame_id.empty()) {
@@ -245,8 +264,79 @@ void InLaneMrmPlannerNode::on_timer()
 
   status.is_latched = trajectory_latcher_.is_latched();
   status.has_latest_candidate = trajectory_latcher_.has_latest_candidate();
+  status.latched_profile = InLaneStopTrigger::PROFILE_UNKNOWN;
+  if (const auto latched_profile = trajectory_latcher_.latched_profile()) {
+    status.latched_profile = to_trigger_profile(*latched_profile);
+  }
   status.cycle_time_ms = (now() - cycle_start).seconds() * 1e3;
   publish_debug_status(status);
+}
+
+InLaneMrmPlannerNode::ProfileFlags InLaneMrmPlannerNode::plan_candidates(
+  const Odometry & odom, const AccelWithCovarianceStamped & accel,
+  const PredictedObjects & live_objects, DebugStatus & status)
+{
+  ProfileFlags planned{};
+
+  const auto planned_traj = trajectory_planner_->plan(odom);
+  if (!planned_traj) {
+    status.reason_code = to_reason_code(path_planner_->last_failure_code());
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Trajectory planning failed.");
+    return planned;
+  }
+
+  status.plan_ok = true;
+  auto base_traj = *planned_traj;
+  status.planned_points = base_traj.points.size();
+  trajectory_smoother_.smooth(base_traj.points, odom.pose.pose);
+  trajectory_modifier_.set_objects(objects_latcher_.objects_for_planning(live_objects));
+  trajectory_modifier_.apply(base_traj.points, odom, accel);
+  trajectory_modifier_.publish_planning_factor();
+
+  for (const auto profile : kAllStopProfiles) {
+    auto traj = base_traj;
+    velocity_planner_.apply(traj.points, odom, accel, profile);
+
+    const size_t sanitized = remove_overlap_points(traj.points, kMinPublishPointInterval);
+    if (sanitized > 0) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000, "Removed %zu overlapping trajectory point(s) (%s).",
+        sanitized, to_string(profile));
+    }
+
+    const auto validation = trajectory_validator_.validate(traj.points);
+    if (profile == kStandbyStopProfile) {
+      status.sanitized_points = sanitized;
+      status.validation_ok = validation.ok;
+      if (!validation.ok) {
+        status.reason_code = to_reason_code(validation.code);
+      }
+    }
+    if (!validation.ok) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000, "Trajectory validation failed (%s): %s",
+        to_string(profile), validation.reason.c_str());
+      continue;
+    }
+
+    traj.header.stamp = now();
+    traj.header.frame_id = odom.header.frame_id;
+    trajectory_latcher_.update_candidate(profile, trajectory_selector_.select(traj));
+    planned.at(to_index(profile)) = true;
+  }
+  return planned;
+}
+
+StopProfile InLaneMrmPlannerNode::resolve_requested_profile(const InLaneStopTrigger & trigger)
+{
+  if (const auto profile = from_trigger_profile(trigger.profile)) {
+    return *profile;
+  }
+  RCLCPP_ERROR_THROTTLE(
+    get_logger(), *get_clock(), 5000,
+    "In-lane stop trigger requested unknown profile %u; using the %s profile.",
+    static_cast<unsigned>(trigger.profile), to_string(kFallbackStopProfile));
+  return kFallbackStopProfile;
 }
 
 InLaneMrmPlannerNode::InputData InLaneMrmPlannerNode::take_data()
@@ -321,6 +411,8 @@ void InLaneMrmPlannerNode::publish_debug_status(const DebugStatus & status)
     static_cast<float>(status.cycle_time_ms),
     static_cast<float>(status.odom_vx),
     static_cast<float>(status.sanitized_points),
+    static_cast<float>(status.requested_profile),
+    static_cast<float>(status.latched_profile),
   };
   pub_debug_status_->publish(msg);
 }

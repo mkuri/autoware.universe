@@ -17,44 +17,56 @@
 namespace autoware::in_lane_mrm_planner
 {
 
-void TrajectoryLatcher::update_candidate(const Trajectory & candidate)
+void TrajectoryLatcher::update_candidate(const StopProfile profile, const Trajectory & candidate)
 {
   if (candidate.points.empty()) {
     return;
   }
-  latest_candidate_ = candidate;
+  latest_candidates_.at(to_index(profile)) = candidate;
 }
 
-void TrajectoryLatcher::latch()
+bool TrajectoryLatcher::latch(const StopProfile profile)
 {
-  if (!latest_candidate_.has_value()) {
-    return;
+  const auto & candidate = latest_candidates_.at(to_index(profile));
+  if (!candidate.has_value()) {
+    return false;
   }
-  latched_traj_ = latest_candidate_.value();
-  latched_ = true;
+  latched_traj_ = candidate.value();
+  latched_profile_ = profile;
+  return true;
 }
 
 void TrajectoryLatcher::unlatch()
 {
-  latched_ = false;
+  latched_profile_.reset();
 }
 
 bool TrajectoryLatcher::is_latched() const
 {
-  return latched_;
+  return latched_profile_.has_value();
+}
+
+std::optional<StopProfile> TrajectoryLatcher::latched_profile() const
+{
+  return latched_profile_;
+}
+
+bool TrajectoryLatcher::has_candidate(const StopProfile profile) const
+{
+  return latest_candidates_.at(to_index(profile)).has_value();
 }
 
 bool TrajectoryLatcher::has_latest_candidate() const
 {
-  return latest_candidate_.has_value();
+  return has_candidate(kStandbyStopProfile);
 }
 
 std::optional<Trajectory> TrajectoryLatcher::output() const
 {
-  if (latched_) {
+  if (latched_profile_) {
     return latched_traj_;
   }
-  return latest_candidate_;
+  return latest_candidates_.at(to_index(kStandbyStopProfile));
 }
 
 }  // namespace autoware::in_lane_mrm_planner

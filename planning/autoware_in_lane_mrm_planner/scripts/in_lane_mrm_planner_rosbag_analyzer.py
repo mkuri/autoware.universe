@@ -223,6 +223,8 @@ class InLaneMrmPlannerRosbagAnalyzer:
         for time_sec, msg in messages:
             if isinstance(msg, Bool):
                 self.trigger.append(time_sec, 1.0 if msg.data else 0.0)
+            elif hasattr(msg, "trigger"):  # tier4_system_msgs/msg/InLaneStopTrigger
+                self.trigger.append(time_sec, 1.0 if msg.trigger else 0.0)
 
     def _load_planner_status(self, messages: list) -> None:
         skipped = 0
