@@ -225,7 +225,7 @@ TEST(SteeringHoldStopLogic, VelocityReachesZeroAndOutputContinues)
   EXPECT_DOUBLE_EQ(last.command->steering_tire_angle, 0.1);
 }
 
-TEST(SteeringHoldStopLogic, TriggerOffResetsToMirrorAndRelatchesNextTime)
+TEST(SteeringHoldStopLogic, TriggerOffResetsToMirrorAndLatchesAgainNextTime)
 {
   SteeringHoldStopLogic logic(defaultParams());
   logic.update(triggerOn(), freshInputs(0.1, 10.0, -0.5), kDt);
@@ -242,7 +242,7 @@ TEST(SteeringHoldStopLogic, TriggerOffResetsToMirrorAndRelatchesNextTime)
   EXPECT_DOUBLE_EQ(init.command->velocity, 9.0);
 }
 
-TEST(SteeringHoldStopLogic, RetriggerUpdatesTargetsWithoutRelatchingSteering)
+TEST(SteeringHoldStopLogic, RetriggerUpdatesTargetsKeepingHeldSteering)
 {
   SteeringHoldStopLogic logic(defaultParams());
   logic.update(triggerOn(-3.0, -5.0), freshInputs(0.1, 10.0, -2.9), kDt);

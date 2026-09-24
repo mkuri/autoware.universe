@@ -53,10 +53,10 @@ private:
 
   void onTimer();
 
-  MeasuredInputs collectInputs(const rclcpp::Time & now) const;
-  void publishControl(const CommandOutput & command, const rclcpp::Time & now);
+  MeasuredInputs collectInputs(const rclcpp::Time & current_time) const;
+  void publishControl(const CommandOutput & command, const rclcpp::Time & current_time);
   void publishDebugStatus(
-    const UpdateResult & result, const MeasuredInputs & inputs, const rclcpp::Time & now);
+    const UpdateResult & result, const MeasuredInputs & inputs, const rclcpp::Time & current_time);
   void logWaitingInput(const MeasuredInputs & inputs);
 
   // Parameters
