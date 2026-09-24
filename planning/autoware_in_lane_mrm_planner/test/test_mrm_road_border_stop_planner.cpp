@@ -151,6 +151,8 @@ TEST(MrmRoadBorderStopPlannerTest, StopInsertedBeforeCrossingBorder)
   const double expected_stop_x = expected_contact_x - 1.0;
   const double contact_x = kTrajStartX + contact->contact_arc_length;
   EXPECT_NEAR(contact_x, expected_contact_x, 0.02);
+  // the contact pose (used for the debug marker) is the refined base_link pose, not a point index
+  EXPECT_NEAR(contact->contact_pose.position.x, expected_contact_x, 0.02);
 
   const auto stop_idx = first_zero_velocity_index(points);
   ASSERT_TRUE(stop_idx.has_value());
@@ -247,6 +249,33 @@ TEST(MrmRoadBorderStopPlannerTest, ContactAtEgoStopsAtEgo)
   const auto stop_idx = first_zero_velocity_index(points);
   ASSERT_TRUE(stop_idx.has_value());
   EXPECT_NEAR(points.at(*stop_idx).pose.position.x, 0.0, 0.01);
+}
+
+TEST(MrmRoadBorderStopPlannerTest, BorderBehindEgoFootprintIsIgnored)
+{
+  // Ego at x=0.25 lies inside the segment [0.0, 0.5]. A border crossing at x=-0.9 is behind the
+  // ego rear (0.25 - 1.03 = -0.78) but inside the footprint of the segment start point at x=0.0
+  // (rear -1.03). The search starts at the ego pose, so this border must not produce a stop.
+  auto planner = make_planner(make_params(), make_map({crossing_border(-0.9)}));
+  auto points = make_straight_trajectory();
+  const auto contact = planner.apply(points, make_ego_odometry(0.25));
+  EXPECT_FALSE(contact.has_value());
+  EXPECT_FALSE(first_zero_velocity_index(points).has_value());
+}
+
+TEST(MrmRoadBorderStopPlannerTest, ContactAtEgoPoseBetweenTrajectoryPoints)
+{
+  // Border crossing just in front of the ego front (0.25 + 3.74 = 3.99): the ego footprint does not
+  // touch it, the contact is found ahead and refined from the ego pose.
+  const double border_x = 4.2;
+  auto planner = make_planner(make_params(), make_map({crossing_border(border_x)}));
+  auto points = make_straight_trajectory();
+  const auto contact = planner.apply(points, make_ego_odometry(0.25));
+  ASSERT_TRUE(contact.has_value());
+  EXPECT_NEAR(kTrajStartX + contact->contact_arc_length, border_x - kFrontOffset, 0.02);
+  EXPECT_GT(contact->contact_arc_length, contact->ego_arc_length);
+  // stop point is clamped to the ego (contact is closer than stop_margin)
+  EXPECT_DOUBLE_EQ(contact->stop_arc_length, contact->ego_arc_length);
 }
 
 TEST(MrmRoadBorderStopPlannerTest, HeightFilterIgnoresElevatedBorder)
