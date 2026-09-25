@@ -229,12 +229,17 @@ MrmStopVelocityPlanner::DecelLimits MrmStopVelocityPlanner::select_profile_limit
       limits.decel = profile_params.max_deceleration_relaxation;
       break;
     }
+    // Clamp each step to the relaxation limit so that a step which does not divide the range
+    // evenly (e.g. -1.5 -> -2.5 -> -3.5 with max -3.0) never exceeds max_*_relaxation.
     if (can_relax_jerk(limits.jerk, profile_params.max_jerk_relaxation)) {
-      limits.jerk += params_.step_jerk_relaxation;
+      limits.jerk =
+        std::max(limits.jerk + params_.step_jerk_relaxation, profile_params.max_jerk_relaxation);
       continue;
     }
     if (can_relax_decel(limits.decel, profile_params.max_deceleration_relaxation)) {
-      limits.decel += params_.step_deceleration_relaxation;
+      limits.decel = std::max(
+        limits.decel + params_.step_deceleration_relaxation,
+        profile_params.max_deceleration_relaxation);
       continue;
     }
 

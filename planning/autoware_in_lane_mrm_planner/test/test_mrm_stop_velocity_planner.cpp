@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace autoware::in_lane_mrm_planner
@@ -201,6 +202,55 @@ TEST(MrmStopVelocityPlannerTest, RelaxationReachesMaxDeceleration)
 
   planner.apply(points, make_odometry(10.0), make_accel(0.0));
   EXPECT_LT(arc_length_at_index(points, find_first_stopped_index(points)), 10.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, RelaxationIsClampedToMaxDeceleration)
+{
+  // Steps that do not divide the relaxation range evenly: -1.5 -> -2.5 -> -3.5 would overshoot
+  // max_deceleration_relaxation (-3.0). The relaxed deceleration must be clamped to -3.0.
+  auto params = make_default_params();
+  params.mrm_velocity.profiles.moderate.target_deceleration = -1.5;
+  params.mrm_velocity.profiles.moderate.target_jerk = -5.0;
+  params.mrm_velocity.profiles.moderate.max_deceleration_relaxation = -3.0;
+  params.mrm_velocity.profiles.moderate.max_jerk_relaxation = -10.0;
+  const MrmStopVelocityPlanner planner(params);
+
+  const double v0 = 10.0;
+  const double required_at_max = planner.required_stop_distance(v0, 0.0, -10.0, -3.0);
+  const double required_at_second_step = planner.required_stop_distance(v0, 0.0, -10.0, -2.5);
+  const auto constraint_idx = static_cast<size_t>(std::ceil(required_at_max + 0.5));
+  ASSERT_GT(required_at_second_step, static_cast<double>(constraint_idx));
+
+  auto points =
+    make_straight_trajectory_with_constraint_at(constraint_idx + 10, 1.0, 10.0F, constraint_idx);
+  const auto limits = planner.select_profile_limits(points, 0, constraint_idx, v0, 0.0);
+  EXPECT_DOUBLE_EQ(limits.jerk, -10.0);
+  EXPECT_DOUBLE_EQ(limits.decel, -3.0);
+}
+
+TEST(MrmStopVelocityPlannerTest, JerkRelaxationIsClampedToMaxJerk)
+{
+  // Jerk step -5.0 from -5.0 with max -7.5 must stop at -7.5, not -10.0.
+  auto params = make_default_params();
+  params.mrm_velocity.profiles.moderate.target_deceleration = -3.0;
+  params.mrm_velocity.profiles.moderate.target_jerk = -5.0;
+  params.mrm_velocity.profiles.moderate.max_deceleration_relaxation = -3.0;
+  params.mrm_velocity.profiles.moderate.max_jerk_relaxation = -7.5;
+  const MrmStopVelocityPlanner planner(params);
+
+  // Constraint too close for any limits: falls back to the max relaxation limits.
+  auto points = make_straight_trajectory_with_constraint_at(15, 1.0, 10.0F, 5);
+  const auto limits = planner.select_profile_limits(points, 0, 5, 10.0, 0.0);
+  EXPECT_DOUBLE_EQ(limits.jerk, -7.5);
+  EXPECT_DOUBLE_EQ(limits.decel, -3.0);
+
+  // Constraint reachable with jerk -7.5: the clamped value is chosen, never -10.0.
+  const double required = planner.required_stop_distance(10.0, 0.0, -7.5, -3.0);
+  const auto idx = static_cast<size_t>(std::ceil(required + 0.5));
+  auto points2 = make_straight_trajectory_with_constraint_at(idx + 10, 1.0, 10.0F, idx);
+  const auto limits2 = planner.select_profile_limits(points2, 0, idx, 10.0, 0.0);
+  EXPECT_GE(limits2.jerk, -7.5);
+  EXPECT_DOUBLE_EQ(limits2.decel, -3.0);
 }
 
 TEST(MrmStopVelocityPlannerTest, ProfileLimitsFollowProfileParams)
