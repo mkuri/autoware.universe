@@ -442,7 +442,7 @@ def detect_storage_id(rosbag_path: Path) -> str:
 
     text = metadata_path.read_text(encoding="utf-8")
     # rosbag2 humble writes `storage_identifier: mcap`, older versions `storage_id:`
-    match = re.search(r"storage_id(?:entifier)?:\s*['\"]?(\w+)['\"]?", text)
+    match = re.search(r"(?:storage_identifier|storage_id):\s*['\"]?(\w+)['\"]?", text)
     if match:
         return match.group(1)
     return "sqlite3"
