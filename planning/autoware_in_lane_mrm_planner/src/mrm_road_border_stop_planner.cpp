@@ -324,7 +324,6 @@ void MrmRoadBorderStopPlanner::set_stop_point(
 
   const auto stop_idx = autoware::motion_utils::insertStopPoint(contact.stop_arc_length, points);
   if (!stop_idx) return;
-  contact.stop_index = stop_idx;
   contact.stop_pose = points.at(*stop_idx).pose;
 
   if (planning_factor_interface_) {
