@@ -32,8 +32,9 @@ enum class StopProfile : uint8_t {
   EMERGENCY = 1,
 };
 
-inline constexpr std::array<StopProfile, 2> kAllStopProfiles{
-  StopProfile::MODERATE, StopProfile::EMERGENCY};
+inline constexpr std::array kAllStopProfiles{StopProfile::MODERATE, StopProfile::EMERGENCY};
+
+inline constexpr size_t kNumStopProfiles = kAllStopProfiles.size();
 
 // Profile whose candidate is published while no trigger is active (hot standby output).
 inline constexpr StopProfile kStandbyStopProfile = StopProfile::MODERATE;
@@ -87,10 +88,10 @@ inline uint8_t to_trigger_profile(const StopProfile profile)
 }
 
 enum class LatchAction {
-  KEEP,     // nothing to do
-  LATCH,    // trigger active and nothing latched yet: latch the requested profile
-  RELATCH,  // trigger active but a different profile is latched: re-plan and latch the new one
-  UNLATCH,  // trigger released while latched
+  KEEP,      // nothing to do
+  LATCH,     // trigger active and nothing latched yet: latch the requested profile
+  RE_LATCH,  // trigger active but a different profile is latched: re-plan and latch the new one
+  UNLATCH,   // trigger released while latched
 };
 
 inline LatchAction decide_latch_action(
@@ -103,7 +104,7 @@ inline LatchAction decide_latch_action(
   if (!latched_profile) {
     return LatchAction::LATCH;
   }
-  return *latched_profile == requested_profile ? LatchAction::KEEP : LatchAction::RELATCH;
+  return *latched_profile == requested_profile ? LatchAction::KEEP : LatchAction::RE_LATCH;
 }
 
 }  // namespace autoware::in_lane_mrm_planner

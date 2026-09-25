@@ -203,7 +203,7 @@ void InLaneMrmPlannerNode::on_timer()
   // Candidates are planned while unlatched. A profile change while latched (e.g. moderate ->
   // emergency) re-plans from the current state and re-latches only a candidate planned in this
   // cycle, so that a stale pre-trigger candidate is never latched.
-  const bool need_plan = !trajectory_latcher_.is_latched() || action == LatchAction::RELATCH;
+  const bool need_plan = !trajectory_latcher_.is_latched() || action == LatchAction::RE_LATCH;
   ProfileFlags planned_profiles{};
   if (need_plan) {
     planned_profiles = plan_candidates(odom, accel, live_objects, status);
@@ -221,7 +221,7 @@ void InLaneMrmPlannerNode::on_timer()
         to_string(requested_profile));
     }
   }
-  if (action == LatchAction::RELATCH) {
+  if (action == LatchAction::RE_LATCH) {
     const auto previous = trajectory_latcher_.latched_profile();
     if (planned_profiles.at(to_index(requested_profile))) {
       trajectory_latcher_.latch(requested_profile);

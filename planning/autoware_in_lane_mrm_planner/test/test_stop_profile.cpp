@@ -61,9 +61,11 @@ TEST(StopProfileTest, DecidesLatchAction)
   EXPECT_EQ(
     decide_latch_action(true, StopProfile::MODERATE, StopProfile::MODERATE), LatchAction::KEEP);
   EXPECT_EQ(
-    decide_latch_action(true, StopProfile::EMERGENCY, StopProfile::MODERATE), LatchAction::RELATCH);
+    decide_latch_action(true, StopProfile::EMERGENCY, StopProfile::MODERATE),
+    LatchAction::RE_LATCH);
   EXPECT_EQ(
-    decide_latch_action(true, StopProfile::MODERATE, StopProfile::EMERGENCY), LatchAction::RELATCH);
+    decide_latch_action(true, StopProfile::MODERATE, StopProfile::EMERGENCY),
+    LatchAction::RE_LATCH);
 }
 
 TEST(TrajectoryLatcherProfileTest, LatchesRequestedProfileCandidate)
@@ -81,7 +83,7 @@ TEST(TrajectoryLatcherProfileTest, LatchesRequestedProfileCandidate)
   EXPECT_FLOAT_EQ(latcher.output()->points.front().longitudinal_velocity_mps, 6.0F);
 }
 
-TEST(TrajectoryLatcherProfileTest, RelatchSwitchesToNewProfileCandidate)
+TEST(TrajectoryLatcherProfileTest, ReLatchSwitchesToNewProfileCandidate)
 {
   TrajectoryLatcher latcher;
   latcher.update_candidate(StopProfile::MODERATE, make_trajectory(3.0F));

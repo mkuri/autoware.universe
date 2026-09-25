@@ -49,7 +49,7 @@ public:
 private:
   std::optional<StopProfile> latched_profile_;
   Trajectory latched_traj_;
-  std::array<std::optional<Trajectory>, kAllStopProfiles.size()> latest_candidates_;
+  std::array<std::optional<Trajectory>, kNumStopProfiles> latest_candidates_;
 };
 
 }  // namespace autoware::in_lane_mrm_planner

@@ -53,7 +53,7 @@ public:
 private:
   using Float32MultiArrayStamped = autoware_internal_debug_msgs::msg::Float32MultiArrayStamped;
   using InLaneStopTrigger = tier4_system_msgs::msg::InLaneStopTrigger;
-  using ProfileFlags = std::array<bool, kAllStopProfiles.size()>;
+  using ProfileFlags = std::array<bool, kNumStopProfiles>;
 
   struct DebugStatus
   {
