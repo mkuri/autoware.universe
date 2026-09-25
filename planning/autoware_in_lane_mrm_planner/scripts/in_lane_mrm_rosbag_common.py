@@ -54,8 +54,8 @@ CONTROL_CMD_TOPIC_D1 = "/mrm/control/trajectory_follower/control_cmd"
 MRM_DIAGNOSTICS_TOPIC_D1 = "/mrm/diagnostics"
 GATE_CONTROL_TOPIC = "/control/control_command_gate/inputs/in_lane_stop/control"
 GATE_GEAR_TOPIC = "/control/control_command_gate/inputs/in_lane_stop/gear"
-# Domain 1 topic name (main -> mrm bridge source side)
-JERK_TRIGGER_TOPIC_D1 = "/control/constant_jerk_deceleration_trigger"
+# tier4_system_msgs/msg/InLaneStopTrigger published by mrm_in_lane_stop_operator
+IN_LANE_STOP_TRIGGER_TOPIC = "/system/in_lane_stop/trigger"
 OPERATION_MODE_TOPIC_D1 = "/system/operation_mode/state"
 
 DOMAIN1_RECORD_TOPICS: Tuple[str, ...] = (
@@ -72,7 +72,7 @@ DOMAIN1_RECORD_TOPICS: Tuple[str, ...] = (
     MRM_DIAGNOSTICS_TOPIC_D1,
     GATE_CONTROL_TOPIC,
     GATE_GEAR_TOPIC,
-    JERK_TRIGGER_TOPIC_D1,
+    IN_LANE_STOP_TRIGGER_TOPIC,
     OPERATION_MODE_TOPIC_D1,
 )
 
@@ -89,6 +89,7 @@ LEGACY_ANALYZE_TOPICS: Tuple[str, ...] = (
     TRAJECTORY_TOPIC_D3,
     PLANNER_STATUS_TOPIC_D3,
     TRIGGER_TOPIC_D3,
+    IN_LANE_STOP_TRIGGER_TOPIC,
     ODOM_TOPIC_D3,
     LONGITUDINAL_DIAG_TOPIC_D3,
     CONTROL_CMD_TOPIC_D3,
@@ -416,7 +417,7 @@ def detect_emergency_episodes(
 
 
 def resolve_trigger_topic(topics: Dict[str, list]) -> Optional[str]:
-    for candidate in (TRIGGER_TOPIC_D1, TRIGGER_TOPIC_D3):
+    for candidate in (IN_LANE_STOP_TRIGGER_TOPIC, TRIGGER_TOPIC_D1, TRIGGER_TOPIC_D3):
         if candidate in topics:
             return candidate
     return None

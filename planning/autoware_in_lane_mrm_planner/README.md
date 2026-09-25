@@ -22,6 +22,52 @@ Do not run package builds in parallel with a full workspace build.
 ros2 launch autoware_in_lane_mrm_planner in_lane_mrm_planner.launch.xml
 ```
 
+## In-lane stop trigger
+
+The planner subscribes the trigger published by `autoware_mrm_in_lane_stop_operator` directly
+(the former `mrm_trigger_relay` node was removed).
+
+| Item          | Value                                                                      |
+| ------------- | -------------------------------------------------------------------------- |
+| Topic (node)  | `~/input/trigger`                                                          |
+| Default remap | `/system/in_lane_stop/trigger` (launch arg `input_trigger_topic`)          |
+| Type          | `tier4_system_msgs/msg/InLaneStopTrigger` (`stamp`, `trigger`, `profile`)  |
+| QoS           | reliable, transient_local, depth 1 (the operator publishes on change only) |
+
+The trigger only selects a deceleration profile; the constraint values are owned by the planner
+(`mrm_velocity.profiles.<name>`).
+
+- Every cycle while unlatched, the path is planned once and a velocity profile is filled for
+  **every** profile (`moderate`, `emergency`). The `moderate` candidate is published as the
+  hot-standby output.
+- `trigger: true` latches the candidate of the requested `profile` (the one planned in the
+  previous cycle). If no candidate of that profile exists yet (e.g. the planner started after
+  the trigger), the latch is retried every cycle.
+- A profile change while triggered (e.g. `moderate` -> `emergency`) re-plans from the current
+  state and re-latches the new profile. Only a candidate planned in that cycle is re-latched;
+  if planning fails the current latch is kept and the re-latch is retried.
+- `trigger: false` unlatches (and releases the latched objects).
+- An unknown `profile` value (e.g. `PROFILE_UNKNOWN`) with `trigger: true` is treated as
+  `moderate` and reported with a throttled error log.
+
+## Parameters: MRM stop velocity
+
+| Name                                                          | Default (L4) | Description                                        |
+| ------------------------------------------------------------- | ------------ | -------------------------------------------------- |
+| `mrm_velocity.profiles.moderate.target_deceleration`          | -3.0         | Target deceleration of `PROFILE_MODERATE` [m/s^2]  |
+| `mrm_velocity.profiles.moderate.target_jerk`                  | -5.0         | Target jerk of `PROFILE_MODERATE` [m/s^3]          |
+| `mrm_velocity.profiles.moderate.max_deceleration_relaxation`  | -4.0         | Relaxation limit of the deceleration [m/s^2]       |
+| `mrm_velocity.profiles.moderate.max_jerk_relaxation`          | -10.0        | Relaxation limit of the jerk [m/s^3]               |
+| `mrm_velocity.profiles.emergency.target_deceleration`         | -6.0         | Target deceleration of `PROFILE_EMERGENCY` [m/s^2] |
+| `mrm_velocity.profiles.emergency.target_jerk`                 | -20.0        | Target jerk of `PROFILE_EMERGENCY` [m/s^3]         |
+| `mrm_velocity.profiles.emergency.max_deceleration_relaxation` | -8.0         | Relaxation limit of the deceleration [m/s^2]       |
+| `mrm_velocity.profiles.emergency.max_jerk_relaxation`         | -30.0        | Relaxation limit of the jerk [m/s^3]               |
+| `mrm_velocity.step_deceleration_relaxation`                   | -1.0         | Deceleration relaxation step (shared) [m/s^2]      |
+| `mrm_velocity.step_jerk_relaxation`                           | -5.0         | Jerk relaxation step (shared) [m/s^3]              |
+| `mrm_velocity.brake_delay_time`                               | 0.5          | Brake dead time before the ramp (shared) [s]       |
+
+Split parameter files per operation class if different constraint values are needed.
+
 ## Debug topic: planner status
 
 Published every control cycle to explain why `~/output/trajectory` was or was not published.
@@ -41,9 +87,9 @@ Other fields are boolean flags (0/1) or numeric diagnostics.
 | Index | Field                  | Unit / type | Description                                                                                                                 |
 | ----- | ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 0     | `reason_code`          | int         | Primary status (see table below)                                                                                            |
-| 1     | `trigger_active`       | 0/1         | MRM trigger is true                                                                                                         |
+| 1     | `trigger_active`       | 0/1         | In-lane stop trigger is true                                                                                                |
 | 2     | `is_latched`           | 0/1         | Trajectory latch is active                                                                                                  |
-| 3     | `has_latest_candidate` | 0/1         | A candidate trajectory is stored in the latcher                                                                             |
+| 3     | `has_latest_candidate` | 0/1         | A candidate trajectory of the standby (`moderate`) profile is stored in the latcher                                         |
 | 4     | `data_ready`           | 0/1         | Map, route, odometry, and acceleration are available                                                                        |
 | 5     | `plan_ok`              | 0/1         | Path planning succeeded this cycle (non-latched mode only)                                                                  |
 | 6     | `validation_ok`        | 0/1         | Trajectory validator passed (non-latched mode only)                                                                         |
@@ -52,6 +98,8 @@ Other fields are boolean flags (0/1) or numeric diagnostics.
 | 9     | `cycle_time_ms`        | ms          | Wall time for this timer callback                                                                                           |
 | 10    | `odom_vx`              | m/s         | Longitudinal velocity from input odometry                                                                                   |
 | 11    | `sanitized_points`     | count       | Overlapping points removed before publish (should stay 0; nonzero means an upstream stage produced (near-)duplicate points) |
+| 12    | `requested_profile`    | enum        | `profile` of the last received trigger (`InLaneStopTrigger::PROFILE_*`; 0 if none received)                                 |
+| 13    | `latched_profile`      | enum        | Profile of the latched trajectory (`InLaneStopTrigger::PROFILE_*`; 0 if not latched)                                        |
 
 ### `reason_code` values
 

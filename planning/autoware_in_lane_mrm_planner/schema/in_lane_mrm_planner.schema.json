@@ -511,25 +511,85 @@
       "mrm_velocity": {
         "type": "object",
         "properties": {
-          "target_deceleration": {
-            "type": "number",
-            "description": "Target longitudinal deceleration for MRM stop velocity planning [m/s^2]",
-            "default": -3.0
-          },
-          "target_jerk": {
-            "type": "number",
-            "description": "Target longitudinal jerk for MRM stop velocity planning [m/s^3]",
-            "default": -5.0
-          },
-          "max_jerk_relaxation": {
-            "type": "number",
-            "description": "Vehicle jerk limit used when relaxing MRM stop profile [m/s^3]",
-            "default": -20.0
-          },
-          "max_deceleration_relaxation": {
-            "type": "number",
-            "description": "Vehicle deceleration limit used when relaxing MRM stop profile [m/s^2]",
-            "default": -6.0
+          "profiles": {
+            "type": "object",
+            "description": "Constraints per deceleration profile of tier4_system_msgs/msg/InLaneStopTrigger",
+            "properties": {
+              "moderate": {
+                "type": "object",
+                "properties": {
+                  "target_deceleration": {
+                    "type": "number",
+                    "description": "Target longitudinal deceleration of the moderate profile [m/s^2]",
+                    "default": -3.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "target_jerk": {
+                    "type": "number",
+                    "description": "Target longitudinal jerk of the moderate profile [m/s^3]",
+                    "default": -5.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "max_jerk_relaxation": {
+                    "type": "number",
+                    "description": "Jerk limit used when relaxing the moderate profile [m/s^3]",
+                    "default": -10.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "max_deceleration_relaxation": {
+                    "type": "number",
+                    "description": "Deceleration limit used when relaxing the moderate profile [m/s^2]",
+                    "default": -4.0,
+                    "exclusiveMaximum": 0.0
+                  }
+                },
+                "required": [
+                  "target_deceleration",
+                  "target_jerk",
+                  "max_jerk_relaxation",
+                  "max_deceleration_relaxation"
+                ],
+                "additionalProperties": false
+              },
+              "emergency": {
+                "type": "object",
+                "properties": {
+                  "target_deceleration": {
+                    "type": "number",
+                    "description": "Target longitudinal deceleration of the emergency profile [m/s^2]",
+                    "default": -6.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "target_jerk": {
+                    "type": "number",
+                    "description": "Target longitudinal jerk of the emergency profile [m/s^3]",
+                    "default": -20.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "max_jerk_relaxation": {
+                    "type": "number",
+                    "description": "Jerk limit used when relaxing the emergency profile [m/s^3]",
+                    "default": -30.0,
+                    "exclusiveMaximum": 0.0
+                  },
+                  "max_deceleration_relaxation": {
+                    "type": "number",
+                    "description": "Deceleration limit used when relaxing the emergency profile [m/s^2]",
+                    "default": -8.0,
+                    "exclusiveMaximum": 0.0
+                  }
+                },
+                "required": [
+                  "target_deceleration",
+                  "target_jerk",
+                  "max_jerk_relaxation",
+                  "max_deceleration_relaxation"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": ["moderate", "emergency"],
+            "additionalProperties": false
           },
           "step_jerk_relaxation": {
             "type": "number",

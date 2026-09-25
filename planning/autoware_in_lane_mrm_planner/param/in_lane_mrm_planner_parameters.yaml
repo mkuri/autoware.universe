@@ -317,30 +317,58 @@ in_lane_mrm_planner:
       description: minimum points-interval length for sparse sampling after optimization [m]
 
   mrm_velocity:
-    target_deceleration:
-      type: double
-      default_value: -3.0
-      description: target longitudinal deceleration for MRM stop velocity planning [m/s^2]
-      validation:
-        lt<>: [0.0]
-    target_jerk:
-      type: double
-      default_value: -5.0
-      description: target longitudinal jerk for MRM stop velocity planning [m/s^3]
-      validation:
-        lt<>: [0.0]
-    max_jerk_relaxation:
-      type: double
-      default_value: -20.0
-      description: vehicle jerk limit used when relaxing MRM stop profile [m/s^3]
-      validation:
-        lt<>: [0.0]
-    max_deceleration_relaxation:
-      type: double
-      default_value: -6.0
-      description: vehicle deceleration limit used when relaxing MRM stop profile [m/s^2]
-      validation:
-        lt<>: [0.0]
+    # Constraints per deceleration profile requested by tier4_system_msgs/msg/InLaneStopTrigger.
+    profiles:
+      moderate:
+        target_deceleration:
+          type: double
+          default_value: -3.0
+          description: target longitudinal deceleration of the moderate (InLaneStopTrigger::PROFILE_MODERATE) profile [m/s^2]
+          validation:
+            lt<>: [0.0]
+        target_jerk:
+          type: double
+          default_value: -5.0
+          description: target longitudinal jerk of the moderate (InLaneStopTrigger::PROFILE_MODERATE) profile [m/s^3]
+          validation:
+            lt<>: [0.0]
+        max_jerk_relaxation:
+          type: double
+          default_value: -10.0
+          description: jerk limit used when relaxing the moderate (InLaneStopTrigger::PROFILE_MODERATE) profile [m/s^3]
+          validation:
+            lt<>: [0.0]
+        max_deceleration_relaxation:
+          type: double
+          default_value: -4.0
+          description: deceleration limit used when relaxing the moderate (InLaneStopTrigger::PROFILE_MODERATE) profile [m/s^2]
+          validation:
+            lt<>: [0.0]
+      emergency:
+        target_deceleration:
+          type: double
+          default_value: -6.0
+          description: target longitudinal deceleration of the emergency (InLaneStopTrigger::PROFILE_EMERGENCY) profile [m/s^2]
+          validation:
+            lt<>: [0.0]
+        target_jerk:
+          type: double
+          default_value: -20.0
+          description: target longitudinal jerk of the emergency (InLaneStopTrigger::PROFILE_EMERGENCY) profile [m/s^3]
+          validation:
+            lt<>: [0.0]
+        max_jerk_relaxation:
+          type: double
+          default_value: -30.0
+          description: jerk limit used when relaxing the emergency (InLaneStopTrigger::PROFILE_EMERGENCY) profile [m/s^3]
+          validation:
+            lt<>: [0.0]
+        max_deceleration_relaxation:
+          type: double
+          default_value: -8.0
+          description: deceleration limit used when relaxing the emergency (InLaneStopTrigger::PROFILE_EMERGENCY) profile [m/s^2]
+          validation:
+            lt<>: [0.0]
     step_jerk_relaxation:
       type: double
       default_value: -5.0

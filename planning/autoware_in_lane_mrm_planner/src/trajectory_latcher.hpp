@@ -15,31 +15,41 @@
 #ifndef TRAJECTORY_LATCHER_HPP_
 #define TRAJECTORY_LATCHER_HPP_
 
+#include "stop_profile.hpp"
 #include "type_alias.hpp"
 
+#include <array>
 #include <optional>
 
 namespace autoware::in_lane_mrm_planner
 {
 
+// Holds the latest candidate trajectory of every deceleration profile and freezes one of them
+// while the in-lane stop trigger is active.
 class TrajectoryLatcher
 {
 public:
-  void update_candidate(const Trajectory & candidate);
+  void update_candidate(StopProfile profile, const Trajectory & candidate);
 
-  void latch();
+  // Latches the latest candidate of `profile`. Returns false (and keeps the current state) if
+  // no candidate of that profile is stored.
+  bool latch(StopProfile profile);
 
   void unlatch();
 
   bool is_latched() const;
+  std::optional<StopProfile> latched_profile() const;
+  bool has_candidate(StopProfile profile) const;
+  // True if a candidate of the standby profile (published while unlatched) is stored.
   bool has_latest_candidate() const;
 
+  // Latched trajectory while latched, otherwise the latest candidate of the standby profile.
   std::optional<Trajectory> output() const;
 
 private:
-  bool latched_{false};
+  std::optional<StopProfile> latched_profile_;
   Trajectory latched_traj_;
-  std::optional<Trajectory> latest_candidate_;
+  std::array<std::optional<Trajectory>, kNumStopProfiles> latest_candidates_;
 };
 
 }  // namespace autoware::in_lane_mrm_planner

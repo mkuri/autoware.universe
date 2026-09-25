@@ -21,6 +21,7 @@
 #include "mrm_stop_velocity_planner.hpp"
 #include "path_planner.hpp"
 #include "predicted_objects_latcher.hpp"
+#include "stop_profile.hpp"
 #include "trajectory_latcher.hpp"
 #include "trajectory_selector_stub.hpp"
 #include "trajectory_smoother.hpp"
@@ -34,9 +35,11 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <autoware_internal_debug_msgs/msg/float32_multi_array_stamped.hpp>
-#include <std_msgs/msg/bool.hpp>
+#include <tier4_system_msgs/msg/in_lane_stop_trigger.hpp>
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace autoware::in_lane_mrm_planner
@@ -49,6 +52,8 @@ public:
 
 private:
   using Float32MultiArrayStamped = autoware_internal_debug_msgs::msg::Float32MultiArrayStamped;
+  using InLaneStopTrigger = tier4_system_msgs::msg::InLaneStopTrigger;
+  using ProfileFlags = std::array<bool, kNumStopProfiles>;
 
   struct DebugStatus
   {
@@ -64,6 +69,8 @@ private:
     double cycle_time_ms{0.0};
     double odom_vx{0.0};
     size_t sanitized_points{0};
+    uint8_t requested_profile{InLaneStopTrigger::PROFILE_UNKNOWN};
+    uint8_t latched_profile{InLaneStopTrigger::PROFILE_UNKNOWN};
   };
 
   struct InputData
@@ -73,10 +80,16 @@ private:
     Odometry::ConstSharedPtr odometry_ptr;
     AccelWithCovarianceStamped::ConstSharedPtr acceleration_ptr;
     PredictedObjects::ConstSharedPtr objects_ptr;
-    std_msgs::msg::Bool::ConstSharedPtr trigger_ptr;
+    InLaneStopTrigger::ConstSharedPtr trigger_ptr;
   };
 
   void on_timer();
+  // Plans the path once and fills the velocity profile of every deceleration profile. Returns
+  // which profiles got a new validated candidate this cycle.
+  ProfileFlags plan_candidates(
+    const Odometry & odom, const AccelWithCovarianceStamped & accel,
+    const PredictedObjects & live_objects, DebugStatus & status);
+  StopProfile resolve_requested_profile(const InLaneStopTrigger & trigger);
   InputData take_data();
   bool is_data_ready(const InputData & input_data) const;
   void update_params();
@@ -103,7 +116,7 @@ private:
   Odometry::ConstSharedPtr odometry_ptr_;
   AccelWithCovarianceStamped::ConstSharedPtr acceleration_ptr_;
   PredictedObjects::ConstSharedPtr objects_ptr_;
-  std_msgs::msg::Bool::ConstSharedPtr trigger_ptr_;
+  InLaneStopTrigger::ConstSharedPtr trigger_ptr_;
 
   autoware_utils::InterProcessPollingSubscriber<
     LaneletRoute, autoware_utils::polling_policy::Newest>
@@ -115,7 +128,7 @@ private:
   autoware_utils::InterProcessPollingSubscriber<AccelWithCovarianceStamped>
     acceleration_subscriber_;
   autoware_utils::InterProcessPollingSubscriber<PredictedObjects> objects_subscriber_;
-  autoware_utils::InterProcessPollingSubscriber<std_msgs::msg::Bool> trigger_subscriber_;
+  autoware_utils::InterProcessPollingSubscriber<InLaneStopTrigger> trigger_subscriber_;
 
   rclcpp::Publisher<Trajectory>::SharedPtr pub_trajectory_;
   rclcpp::Publisher<Float32MultiArrayStamped>::SharedPtr pub_debug_status_;

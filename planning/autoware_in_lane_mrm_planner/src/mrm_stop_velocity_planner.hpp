@@ -15,6 +15,7 @@
 #ifndef MRM_STOP_VELOCITY_PLANNER_HPP_
 #define MRM_STOP_VELOCITY_PLANNER_HPP_
 
+#include "stop_profile.hpp"
 #include "type_alias.hpp"
 
 namespace autoware::in_lane_mrm_planner
@@ -29,21 +30,32 @@ public:
     double decel{};
   };
 
+  // Constraints of one deceleration profile (`mrm_velocity.profiles.<name>`).
+  struct ProfileLimits
+  {
+    double target_jerk{};
+    double target_deceleration{};
+    double max_jerk_relaxation{};
+    double max_deceleration_relaxation{};
+  };
+
   explicit MrmStopVelocityPlanner(const Params & params);
 
   void update_params(const Params & params);
 
   void apply(
-    TrajectoryPoints & points, const Odometry & odom,
-    const AccelWithCovarianceStamped & accel) const;
+    TrajectoryPoints & points, const Odometry & odom, const AccelWithCovarianceStamped & accel,
+    StopProfile profile = StopProfile::MODERATE) const;
+
+  ProfileLimits profile_limits(StopProfile profile) const;
 
   static std::optional<size_t> find_constraint_stop_index(const TrajectoryPoints & points);
 
   double required_stop_distance(double v0, double a0, double jerk, double decel) const;
 
   DecelLimits select_profile_limits(
-    const TrajectoryPoints & points, size_t ego_idx, size_t constraint_idx, double v0,
-    double a0) const;
+    const TrajectoryPoints & points, size_t ego_idx, size_t constraint_idx, double v0, double a0,
+    StopProfile profile = StopProfile::MODERATE) const;
 
 private:
   using MrmVelocityParams = Params::MrmVelocity;
