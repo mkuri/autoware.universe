@@ -158,6 +158,11 @@ TEST(MrmRoadBorderStopPlannerTest, StopInsertedBeforeCrossingBorder)
   ASSERT_TRUE(stop_idx.has_value());
   EXPECT_EQ(*stop_idx, *contact->stop_index);
   EXPECT_NEAR(points.at(*stop_idx).pose.position.x, expected_stop_x, 0.05);
+  // the stop pose is kept with the contact (the latched trajectory may be resampled later)
+  ASSERT_TRUE(contact->stop_pose.has_value());
+  EXPECT_DOUBLE_EQ(contact->stop_pose->position.x, points.at(*stop_idx).pose.position.x);
+  // re-publishing while latched is a no-op without a node (publishers are disabled)
+  EXPECT_NO_THROW(planner.publish_latched(points, make_ego_odometry()));
   // every point after the stop point is zero velocity
   for (size_t i = *stop_idx; i < points.size(); ++i) {
     EXPECT_FLOAT_EQ(points.at(i).longitudinal_velocity_mps, 0.0F);
