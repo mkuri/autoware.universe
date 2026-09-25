@@ -50,6 +50,7 @@ using visualization_msgs::msg::MarkerArray;
 constexpr size_t kBisectionIterations = 6;  // 0.5 m spacing / 2^6 ≈ 0.01 m
 constexpr const char * kModuleName = "in_lane_mrm_road_border_stop";
 
+// Equivalent to bg::closest_points, which is not available in Boost 1.74 (ROS 2 Humble).
 geometry_msgs::msg::Point closest_point_on_segment(
   const Segment2d & segment, const geometry_msgs::msg::Point & p, const double z)
 {
@@ -188,7 +189,6 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::apply(
   TrajectoryPoints & points, const Odometry & odom)
 {
   last_contact_.reset();
-  debug_footprints_.clear();
 
   if (!params_.enable || points.size() < 2 || boundary_index_.empty()) {
     return std::nullopt;
@@ -218,10 +218,9 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::find_first_contact(
   }
 
   const auto make_contact = [&](
-                              const size_t index, const BoundarySegmentIndex::Entry & entry,
-                              const double arc_length, const geometry_msgs::msg::Pose & pose) {
+                              const BoundarySegmentIndex::Entry & entry, const double arc_length,
+                              const geometry_msgs::msg::Pose & pose) {
     RoadBorderContact contact;
-    contact.contact_index = index;
     contact.ego_arc_length = ego_arc_length;
     contact.linestring_id = entry.linestring_id;
     contact.segment = entry.segment;
@@ -235,8 +234,7 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::find_first_contact(
   // The first footprint is the ego itself (not the trajectory point behind it at the segment
   // start).
   if (const auto hit = find_intersecting_segment(create_footprint(ego_pose), ego_pose.position.z)) {
-    return make_contact(
-      std::min(ego_segment_idx + 1, points.size() - 1), **hit, ego_arc_length, ego_pose);
+    return make_contact(**hit, ego_arc_length, ego_pose);
   }
 
   geometry_msgs::msg::Pose pose_prev = ego_pose;
@@ -255,7 +253,7 @@ std::optional<RoadBorderContact> MrmRoadBorderStopPlanner::find_first_contact(
       continue;
     }
     const auto [contact_arc, contact_pose] = refine_contact(pose_prev, pose, arc_prev, arc);
-    return make_contact(i, **hit, contact_arc, contact_pose);
+    return make_contact(**hit, contact_arc, contact_pose);
   }
   return std::nullopt;
 }

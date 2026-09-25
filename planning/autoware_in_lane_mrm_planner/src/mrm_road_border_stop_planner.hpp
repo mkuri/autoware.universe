@@ -71,7 +71,6 @@ private:
 
 struct RoadBorderContact
 {
-  size_t contact_index{0};  //!< first trajectory index at or after the contact (before insertion)
   double contact_arc_length{0.0};  //!< refined base_link arc length (from trajectory start) [m]
   geometry_msgs::msg::Pose contact_pose;  //!< base_link pose where the footprint first touches
   double ego_arc_length{0.0};  //!< arc length of the ego position projected on the trajectory [m]
@@ -135,7 +134,6 @@ private:
   BoundarySegmentIndex boundary_index_;
 
   std::optional<RoadBorderContact> last_contact_;
-  std::vector<autoware_utils_geometry::Polygon2d> debug_footprints_;
   autoware_internal_planning_msgs::msg::SafetyFactorArray safety_factors_;
 
   std::unique_ptr<autoware::planning_factor_interface::PlanningFactorInterface>
